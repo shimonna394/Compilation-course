@@ -46,14 +46,27 @@ let parse_dot_sign = make_spaced(PC.char '.');;
 
 let parse_sign = PC.disj parse_positive_sign parse_negative_sign;;
 
+(*PC.pack (PC.caten (PC.star (PC.char '0')) (PC.plus digit)) (fun (_,l) -> l)*)
 let parse_natural = PC.plus digit;;
 
 let parse_signed_natural = PC.caten parse_sign parse_natural;;
 
 (* Numbers *)
 
-let parse_intiger = PC.disj (PC.pack parse_natural (fun (l) -> ('+',l))) parse_singed_natural;;
+let parse_integer = PC.disj (PC.pack parse_natural (fun (l) -> ('+',l))) parse_signed_natural;;
 
-let parse_fraction = PC.caten (PC.caten parse_intiger parse_division_sign) parse_natural;;
+let parse_fraction = PC.caten (PC.caten parse_integer parse_division_sign) parse_natural;;
 
-let parse_float = PC.caten (PC.caten parse_intiger parse_dot_sign) parse_natural;;
+let parse_float = PC.caten (PC.caten parse_integer parse_dot_sign) parse_natural;;
+
+let parse_number = 
+  let float_integer = PC.pack parse_integer (fun (l) -> ((l, '.'), ['0'])) in 
+  PC.disj (PC.disj parse_fraction parse_float) float_integer;;
+
+  (* String and Chars *)
+    let parse_string_meta_char = 
+      let backslash = make_spaced(PC.char '\\')
+      and quote = make_spaced(PC.char '\"')
+      and tab = make_spaced(PC.char '\t') 
+      and new_line = make_spaced(PC.char '\n') in
+      PC.disj_list [backslash; quote; tab; new_line];;
