@@ -128,9 +128,25 @@ let parse_number =
   PC.disj (PC.disj parse_fraction parse_float) float_integer;;
 
   (* String and Chars *)
-    let parse_string_meta_char = 
+  let parse_string_meta_char = 
+    fun c ->
       let backslash = make_spaced(PC.char '\\')
       and quote = make_spaced(PC.char '\"')
       and tab = make_spaced(PC.char '\t') 
+      and newFeed = make_spaced(PC.char (char_of_int 12)) (*\f*)
       and new_line = make_spaced(PC.char '\n') in
-      PC.disj_list [backslash; quote; tab; new_line];;
+      (PC.disj_list [backslash; quote; tab; new_line; newFeed])[c];;
+    
+    let parse_string_literal_char =     
+      fun c -> 
+        if c == '\\'
+        then PC.nt_none [c]
+        else if c == '\"'
+        then PC.nt_none [c]
+        else (PC.char c)[c];;
+
+  let parse_string_char = PC.disj parse_string_literal_char parse_string_meta_char;;
+
+
+  
+        
