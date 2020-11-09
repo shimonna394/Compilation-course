@@ -128,25 +128,49 @@ let parse_number =
   PC.disj (PC.disj parse_fraction parse_float) float_integer;;
 
   (* String and Chars *)
+
+  let parse_quote_sign = make_spaced(PC.char '\"');;
+
   let parse_string_meta_char = 
-    fun c ->
       let backslash = make_spaced(PC.char '\\')
       and quote = make_spaced(PC.char '\"')
       and tab = make_spaced(PC.char '\t') 
       and newFeed = make_spaced(PC.char (char_of_int 12)) (*\f*)
       and new_line = make_spaced(PC.char '\n') in
-      (PC.disj_list [backslash; quote; tab; new_line; newFeed])[c];;
+      (PC.disj_list [backslash; quote; tab; new_line; newFeed]);;
     
-    let parse_string_literal_char =     
-      fun c -> 
-        if c == '\\'
-        then PC.nt_none [c]
-        else if c == '\"'
-        then PC.nt_none [c]
-        else (PC.char c)[c];;
+    let parse_string_literal_char =
+      PC.const (fun (c) -> c != '\\' && c != '\"');;
 
-  let parse_string_char = PC.disj parse_string_literal_char parse_string_meta_char;;
+    let parse_string_char = PC.disj parse_string_literal_char parse_string_meta_char;;
+        
+    let parse_string = 
+      PC.caten (PC.caten parse_quote_sign parse_string_char) parse_quote_sign;;
+
+      let rec gcd x y = 
+        if y = 0 then x
+        else (gcd y (x mod y));;
+
+    let number_val exp =
+      try let nt = (fun (l, _) -> l)(parse_fraction exp) in
+        let numerator = (fun (((sign, num),div),frac) -> int_of_string((String.make 1 sign) ^ list_to_string(num))) nt   
+        and denominator = (fun (((sign, num),div),frac) -> int_of_string(list_to_string(frac))) nt in 
+        let gcdVal = (gcd numerator denominator) in        
+        Fraction(numerator / gcdVal, denominator / gcdVal)
+      with PC.X_no_match -> 
+      try let nt = (fun (l, _) -> l)(parse_float exp) in
+        let float_num = (fun (((sign, num),div),frac) -> float_of_string((String.make 1 sign) ^ list_to_string(num) ^ list_to_string(frac))) nt   
+        in Float(float_num)
+      with PC.X_no_match ->
+      try let nt = (fun (l, _) -> l)(parse_integer exp) in
+          let num = (fun (sign, num) -> int_of_string((String.make 1 sign) ^ list_to_string(num))) nt
+          in Fraction(num, 1) (* Don't know what should be here...*)
+      with PC.X_no_match -> raise X_no_match;;
 
 
-  
+
+        
+
+
+      
         
