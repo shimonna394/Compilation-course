@@ -96,6 +96,8 @@ let parse_nil =
 
 (* Sharon *)
 
+(* -----------Numbers------------- *)
+
 (* Signs *)
 
 let parse_positive_sign = make_spaced(PC.char '+');;
@@ -106,16 +108,15 @@ let parse_division_sign = make_spaced(PC.char '/');;
 
 let parse_dot_sign = make_spaced(PC.char '.');;
 
+let parse_n = PC.disj (PC.char 'e') (PC.char 'E');;
+
 (* Combinations *)
 
 let parse_sign = PC.disj parse_positive_sign parse_negative_sign;;
 
-(*PC.pack (PC.caten (PC.star (PC.char '0')) (PC.plus digit)) (fun (_,l) -> l)*)
 let parse_natural = PC.plus digit;;
 
 let parse_signed_natural = PC.caten parse_sign parse_natural;;
-
-(* Numbers *)
 
 let parse_integer = PC.disj (PC.pack parse_natural (fun (l) -> ('+',l))) parse_signed_natural;;
 
@@ -127,45 +128,91 @@ let parse_number =
   let float_integer = PC.pack parse_integer (fun (l) -> ((l, '.'), ['0'])) in 
   PC.disj (PC.disj parse_fraction parse_float) float_integer;;
 
+let parse_sci_not exp = 
+  let parse_integer_in_float_stracture = PC.pack parse_integer (fun (l) -> ((l, '.'), ['0'])) in
+  try (PC.caten (PC.caten parse_integer_in_float_stracture parse_n) parse_integer) exp
+  with PC.X_no_match ->
+  try (PC.caten (PC.caten parse_float parse_n) parse_integer) exp
+  with PC.X_no_match -> raise X_no_match;;
+
+
+(*                                          EVAL NUMBERS                                              *)  
+(* -------------------------------------------------------------------------------------------------- *)
+
+let parsed_integer_to_int_type parsed_exp = 
+  let sign = (fun (l,_) -> l) parsed_exp 
+  and num = (fun (_,r) -> r) parsed_exp
+  in int_of_string((String.make 1 sign) ^ list_to_string(num));;
+
+let parsed_integer_to_float_type parsed_exp =
+          let num = (fun (sign, num) -> float_of_string((String.make 1 sign) ^ list_to_string(num) ^ ".0")) parsed_exp
+          in num;;
+
+let parsed_float_to_float_type parsed_exp = 
+    let float_num = (fun ((((sign, num),div),frac),r) -> float_of_string((String.make 1 sign) ^ list_to_string(num) ^ "." ^ list_to_string(frac))) parsed_exp   
+        in float_num;;
+
+
+let rec gcd x y = 
+  if y = 0 then x
+  else (gcd y (x mod y));;
+
+let eval_fraction exp =
+  let nt = (fun (l, _) -> l)(parse_fraction exp) in
+  let numerator = (fun (((sign, num),div),frac) -> int_of_string((String.make 1 sign) ^ list_to_string(num))) nt   
+  and denominator = (fun (((sign, num),div),frac) -> int_of_string(list_to_string(frac))) nt in 
+  let gcdVal = (gcd numerator denominator) in        
+  Fraction(numerator / gcdVal, denominator / gcdVal);;
+
+let eval_float exp = 
+  let parsed_exp = parsed_float_to_float_type (parse_float exp) in
+  Float(parsed_exp);;
+
+let eval_int exp =
+  let parsed_exp = parse_integer exp in
+  let num = (fun ((sign, num),r) -> int_of_string((String.make 1 sign) ^ (list_to_string num)))parsed_exp in
+  Fraction(num, 1);;
+
+
+let eval_sci_no exp = 
+  let parsed_exp = parse_sci_not exp in
+  let eval_first_float = parsed_float_to_float_type((fun ((l,r),k) -> l) parsed_exp) 
+  and eval_second_float = parsed_integer_to_float_type((fun ((l,r),k) -> r) parsed_exp) in
+  let exp_result = 10.0 ** eval_second_float in
+  Float(eval_first_float *. exp_result);;
+
+let eval_number exp = 
+  try eval_int exp
+  with PC.X_no_match ->
+  try eval_fraction exp
+  with PC.X_no_match ->
+  try eval_float exp
+  with PC.X_no_match ->
+  try eval_sci_no exp
+  with PC.X_no_match -> raise X_no_match;;
+  
+  (* -------------------------------------------------------------------------------------------------- *)
+
   (* String and Chars *)
 
-  let parse_quote_sign = make_spaced(PC.char '\"');;
+let parse_quote_sign = PC.disj (make_spaced(PC.char '\"')) (make_spaced(PC.char '"'));;
 
-  let parse_string_meta_char = 
-      let backslash = make_spaced(PC.char '\\')
-      and quote = make_spaced(PC.char '\"')
-      and tab = make_spaced(PC.char '\t') 
-      and newFeed = make_spaced(PC.char (char_of_int 12)) (*\f*)
-      and new_line = make_spaced(PC.char '\n') in
-      (PC.disj_list [backslash; quote; tab; new_line; newFeed]);;
+let parse_string_meta_char = 
+  let backslash = make_spaced(PC.char '\\')
+  and quote = make_spaced(PC.char '\"')
+  and tab = make_spaced(PC.char '\t') 
+  and newFeed = make_spaced(PC.char (char_of_int 12)) (*\f*)
+  and new_line = make_spaced(PC.char '\n') in
+  (PC.disj_list [backslash; quote; tab; new_line; newFeed]);;
     
-    let parse_string_literal_char =
-      PC.const (fun (c) -> c != '\\' && c != '\"');;
+let parse_string_literal_char =
+  PC.const (fun (c) -> c != '\\' && c != '"');;
 
-    let parse_string_char = PC.disj parse_string_literal_char parse_string_meta_char;;
-        
-    let parse_string = 
-      PC.caten (PC.caten parse_quote_sign parse_string_char) parse_quote_sign;;
+let parse_string_char = PC.star (PC.disj parse_string_literal_char parse_string_meta_char);;
+    
+let parse_string = 
+  PC.caten (PC.caten parse_quote_sign parse_string_char) parse_quote_sign;;
 
-      let rec gcd x y = 
-        if y = 0 then x
-        else (gcd y (x mod y));;
-
-    let number_val exp =
-      try let nt = (fun (l, _) -> l)(parse_fraction exp) in
-        let numerator = (fun (((sign, num),div),frac) -> int_of_string((String.make 1 sign) ^ list_to_string(num))) nt   
-        and denominator = (fun (((sign, num),div),frac) -> int_of_string(list_to_string(frac))) nt in 
-        let gcdVal = (gcd numerator denominator) in        
-        Fraction(numerator / gcdVal, denominator / gcdVal)
-      with PC.X_no_match -> 
-      try let nt = (fun (l, _) -> l)(parse_float exp) in
-        let float_num = (fun (((sign, num),div),frac) -> float_of_string((String.make 1 sign) ^ list_to_string(num) ^ list_to_string(frac))) nt   
-        in Float(float_num)
-      with PC.X_no_match ->
-      try let nt = (fun (l, _) -> l)(parse_integer exp) in
-          let num = (fun (sign, num) -> int_of_string((String.make 1 sign) ^ list_to_string(num))) nt
-          in Fraction(num, 1) (* Don't know what should be here...*)
-      with PC.X_no_match -> raise X_no_match;;
 
 
 
