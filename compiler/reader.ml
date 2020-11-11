@@ -72,12 +72,49 @@ let nt_lparen = make_spaces_and_comments(PC.char '(');;
 
 let nt_rparen = make_spaces_and_comments(PC.char ')');;
 
+(* Signs *)
+
+let parse_positive_sign = make_spaced(PC.char '+');;
+
+let parse_negative_sign = make_spaced(PC.char '-');;
+
+let parse_division_sign = make_spaced(PC.char '/');;
+
+let parse_dot_sign = make_spaced(PC.char '.');;
+
+let parse_n = PC.disj (PC.char 'e') (PC.char 'E');;
+
+(* Combinations *)
+
+let parse_sign = PC.disj parse_positive_sign parse_negative_sign;;
+
+let parse_natural = PC.plus digit;;
+
+let parse_signed_natural = PC.caten parse_sign parse_natural;;
+
+let parse_integer = PC.disj (PC.pack parse_natural (fun (l) -> ('+',l))) parse_signed_natural;;
+
+let parse_fraction = PC.caten (PC.caten parse_integer parse_division_sign) parse_natural;;
+
+let parse_float = PC.caten (PC.caten parse_integer parse_dot_sign) parse_natural;;
+
+let parse_number = 
+  let float_integer = PC.pack parse_integer (fun (l) -> ((l, '.'), ['0'])) in 
+  PC.disj (PC.disj parse_fraction parse_float) float_integer;;
+
+let parse_sci_not exp = 
+  let parse_integer_in_float_stracture = PC.pack parse_integer (fun (l) -> ((l, '.'), ['0'])) in
+  try (PC.caten (PC.caten parse_integer_in_float_stracture parse_n) parse_integer) exp
+  with PC.X_no_match ->
+  try (PC.caten (PC.caten parse_float parse_n) parse_integer) exp
+  with PC.X_no_match -> raise X_no_match;;
+
+
 let make_parens nt = 
   make_paired nt_lparen nt_rparen nt;; 
 
 let rec all_sexp sexp = (PC.disj_list [parse_booleans; eval_number; parse_char;parse_symbol;parse_nil;parse_list;
 parse_dotted_list;parse_quoted;parse_qquoted;parse_unquoted;parse_unquoted_spliced;parse_sexp_comments]) sexp;
-
 
 
 (* parse booleans *)
@@ -146,8 +183,8 @@ and parse_dotted_list sexp =
   let before_dot = make_spaces_and_comments (PC.plus all_sexp) in
   let with_no_dot = PC.pack (caten before_dot dot) (fun (before,dot) -> before) in
   let dotted_list = PC.pack (caten with_no_dot all_sexp) (fun (before_dot,after_dot) ->
-  List.fold_right (fun x y -> Pair(x,y)) (List.append before_dot (after_dot::[])) Nil) in
-  (make_parens dotted_list) sexp;
+  List.fold_right (fun x y -> match y with Nil -> x | _ -> Pair(x,y)) (List.append before_dot (after_dot::[])) Nil) in
+  (make_spaces_and_sexp_comments (make_parens dotted_list)) sexp;
 
 
 (* parse quote *)
@@ -198,7 +235,6 @@ let parse_positive_sign = make_spaced(PC.char '+');;
 
 let parse_negative_sign = make_spaced(PC.char '-');;
 
-let parse_division_sign = make_spaced(PC.char '/');;
 
 let parse_dot_sign = make_spaced(PC.char '.');;
 
