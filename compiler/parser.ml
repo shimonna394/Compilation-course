@@ -158,29 +158,34 @@ let rec gcd x y =
   else (gcd y (x mod y));;
 
 let eval_fraction exp =
-  let nt = (fun (l, _) -> l)(parse_fraction exp) in
+  let parsed_exp = parse_fraction exp in
+  let nt = (fun (l, r) -> l)parsed_exp
+  and rest = (fun (l,r) ->r)parsed_exp in
   let numerator = (fun (((sign, num),div),frac) -> int_of_string((String.make 1 sign) ^ list_to_string(num))) nt   
   and denominator = (fun (((sign, num),div),frac) -> int_of_string(list_to_string(frac))) nt in 
   let gcdVal = (gcd numerator denominator) in        
-  Fraction(numerator / gcdVal, denominator / gcdVal);;
+  (Fraction(numerator / gcdVal, denominator / gcdVal), rest);;
 
 let eval_float exp = 
-  let parsed_exp = parsed_float_to_float_type (parse_float exp) in
-  Float(parsed_exp);;
+  let parsed_exp = parse_float exp in
+  let rest = (fun (l,r) -> r)parsed_exp in
+  (Float(parsed_float_to_float_type parsed_exp),rest);;
 
 let eval_int exp =
   let parsed_exp = parse_integer exp in
-  let num = (fun ((sign, num),r) -> int_of_string((String.make 1 sign) ^ (list_to_string num)))parsed_exp in
-  Fraction(num, 1);;
+  let num = (fun ((sign, num),r) -> int_of_string((String.make 1 sign) ^ (list_to_string num)))parsed_exp 
+  and rest = (fun ((sign, num),r) -> r)parsed_exp in
+  (Fraction(num, 1),rest);;
 
 
 let eval_sci_no exp = 
   let parsed_exp = parse_sci_not exp in
+  let rest = (fun (l,r) -> r)parsed_exp in
   let eval_first_float = parsed_float_to_float_type((fun ((l,r),k) -> l) parsed_exp) 
   and eval_second_float = parsed_integer_to_float_type((fun ((l,r),k) -> r) parsed_exp) in
   let exp_result = 10.0 ** eval_second_float in
-  Float(eval_first_float *. exp_result);;
-
+  (Float(eval_first_float *. exp_result), rest);;
+  
 let eval_number exp = 
   try eval_int exp
   with PC.X_no_match ->
@@ -190,12 +195,11 @@ let eval_number exp =
   with PC.X_no_match ->
   try eval_sci_no exp
   with PC.X_no_match -> raise X_no_match;;
-  
   (* -------------------------------------------------------------------------------------------------- *)
 
   (* String and Chars *)
 
-let parse_quote_sign = PC.disj (make_spaced(PC.char '\"')) (make_spaced(PC.char '"'));;
+let parse_quote_sign = (PC.char '"');;
 
 let parse_string_meta_char = 
   let backslash = make_spaced(PC.char '\\')

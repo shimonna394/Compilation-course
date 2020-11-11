@@ -75,7 +75,7 @@ let nt_rparen = make_spaces_and_comments(PC.char ')');;
 let make_parens nt = 
   make_paired nt_lparen nt_rparen nt;; 
 
-let rec all_sexp sexp = (PC.disj_list [parse_booleans; parse_char;parse_symbol;parse_nil;parse_list;
+let rec all_sexp sexp = (PC.disj_list [parse_booleans; eval_number; parse_char;parse_symbol;parse_nil;parse_list;
 parse_dotted_list;parse_quoted;parse_qquoted;parse_unquoted;parse_unquoted_spliced;parse_sexp_comments]) sexp;
 
 
@@ -185,7 +185,12 @@ and parse_sexp_comments sexp =
 and make_spaces_and_sexp_comments nt =
   (make_paired (star (caten (word "#;") all_sexp)) (star (caten (word "#;") all_sexp)) (make_spaces_and_comments nt));;
 
+
+
+
 (* Sharon *)
+
+(* -----------Numbers------------- *)
 
 (* Signs *)
 
@@ -197,16 +202,15 @@ let parse_division_sign = make_spaced(PC.char '/');;
 
 let parse_dot_sign = make_spaced(PC.char '.');;
 
+let parse_n = PC.disj (PC.char 'e') (PC.char 'E');;
+
 (* Combinations *)
 
 let parse_sign = PC.disj parse_positive_sign parse_negative_sign;;
 
-(*PC.pack (PC.caten (PC.star (PC.char '0')) (PC.plus digit)) (fun (_,l) -> l)*)
 let parse_natural = PC.plus digit;;
 
 let parse_signed_natural = PC.caten parse_sign parse_natural;;
-
-(* Numbers *)
 
 let parse_integer = PC.disj (PC.pack parse_natural (fun (l) -> ('+',l))) parse_signed_natural;;
 
@@ -217,6 +221,72 @@ let parse_float = PC.caten (PC.caten parse_integer parse_dot_sign) parse_natural
 let parse_number = 
   let float_integer = PC.pack parse_integer (fun (l) -> ((l, '.'), ['0'])) in 
   PC.disj (PC.disj parse_fraction parse_float) float_integer;;
+
+let parse_sci_not exp = 
+  let parse_integer_in_float_stracture = PC.pack parse_integer (fun (l) -> ((l, '.'), ['0'])) in
+  try (PC.caten (PC.caten parse_integer_in_float_stracture parse_n) parse_integer) exp
+  with PC.X_no_match ->
+  try (PC.caten (PC.caten parse_float parse_n) parse_integer) exp
+  with PC.X_no_match -> raise X_no_match;;
+
+
+(*                                          EVAL NUMBERS                                              *)  
+(* -------------------------------------------------------------------------------------------------- *)
+
+let parsed_integer_to_int_type parsed_exp = 
+  let sign = (fun (l,_) -> l) parsed_exp 
+  and num = (fun (_,r) -> r) parsed_exp
+  in int_of_string((String.make 1 sign) ^ list_to_string(num));;
+
+let parsed_integer_to_float_type parsed_exp =
+  (fun (sign, num) -> float_of_string((String.make 1 sign) ^ list_to_string(num) ^ ".0")) parsed_exp;;
+
+let parsed_float_to_float_type parsed_exp = 
+  (fun ((((sign, num),div),frac),r) -> float_of_string((String.make 1 sign) ^ list_to_string(num) ^ "." ^ list_to_string(frac))) parsed_exp;;
+
+
+let rec gcd x y = 
+  if y = 0 then x
+  else (gcd y (x mod y));;
+
+let eval_fraction exp =
+  let parsed_exp = parse_fraction exp in
+  let nt = (fun (l, r) -> l)parsed_exp
+  and rest = (fun (l,r) ->r)parsed_exp in
+  let numerator = (fun (((sign, num),div),frac) -> int_of_string((String.make 1 sign) ^ list_to_string(num))) nt   
+  and denominator = (fun (((sign, num),div),frac) -> int_of_string(list_to_string(frac))) nt in 
+  let gcdVal = (gcd numerator denominator) in        
+  (Number(Fraction(numerator / gcdVal, denominator / gcdVal)), rest);;
+
+let eval_float exp = 
+  let parsed_exp = parse_float exp in
+  let rest = (fun (l,r) -> r)parsed_exp in
+  (Number(Float(parsed_float_to_float_type parsed_exp)),rest);;
+
+let eval_int exp =
+  let parsed_exp = parse_integer exp in
+  let num = (fun ((sign, num),r) -> int_of_string((String.make 1 sign) ^ (list_to_string num)))parsed_exp 
+  and rest = (fun ((sign, num),r) -> r)parsed_exp in
+  (Number(Fraction(num, 1)),rest);;
+
+
+let eval_sci_no exp = 
+  let parsed_exp = parse_sci_not exp in
+  let rest = (fun (l,r) -> r)parsed_exp in
+  let eval_first_float = parsed_float_to_float_type((fun ((l,r),k) -> l) parsed_exp) 
+  and eval_second_float = parsed_integer_to_float_type((fun ((l,r),k) -> r) parsed_exp) in
+  let exp_result = 10.0 ** eval_second_float in
+  (Number(Float(eval_first_float *. exp_result)), rest);;
+  
+let eval_number exp = 
+  try eval_int exp
+  with PC.X_no_match ->
+  try eval_fraction exp
+  with PC.X_no_match ->
+  try eval_float exp
+  with PC.X_no_match ->
+  try eval_sci_no exp
+  with PC.X_no_match -> raise X_no_match;;
 
   (* String and Chars *)
 
