@@ -68,9 +68,10 @@ let upper_case = PC.range 'A' 'Z';;
 
 let dot = PC.word_ci ".";;
 
-let nt_lparen = make_spaces_and_comments(PC.char '(');;
+let nt_lparen = make_spaces_and_comments (PC.char '(');;
 
-let nt_rparen = make_spaces_and_comments(PC.char ')');;
+let nt_rparen = make_spaces_and_comments (PC.char ')');;
+
 
 (* Signs *)
 
@@ -163,8 +164,7 @@ let rec gcd x y =
     let exp_result = 10.0 ** eval_second_float in
     (Number(Float(eval_first_float *. exp_result)), rest);;
     
-  let eval_number exp = 
-    (PC.disj_list [eval_float;eval_sci_no;eval_int;eval_fraction]) exp;;
+  
    (* try eval_float exp
     with PC.X_no_match ->
     try eval_sci_no exp
@@ -218,9 +218,14 @@ and parse_booleans sexp =
 (* parse nil *)
 
 and parse_nil sexp =
-  let nt_nil = pack (caten nt_lparen nt_rparen) (fun (lparen, rparen) -> Nil) in
+  let nt_nil = pack (make_paired nt_lparen nt_rparen (star (caten (word_ci "#;") all_sexp))) (fun (sexp) -> Nil) in
   let nt_nil = make_spaces_and_sexp_comments nt_nil in
   nt_nil sexp;
+
+(* parse number *)
+
+and eval_number exp = 
+  (make_spaces_and_sexp_comments (PC.disj_list [eval_sci_no;eval_float;eval_fraction;eval_int])) exp;
 
 (* parse symbol *)  
 
