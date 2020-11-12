@@ -163,35 +163,32 @@ let rec gcd x y =
     and eval_second_float = parsed_integer_to_float_type((fun ((l,r),k) -> r) parsed_exp) in
     let exp_result = 10.0 ** eval_second_float in
     (Number(Float(eval_first_float *. exp_result)), rest);;
-    
   
-   (* try eval_float exp
-    with PC.X_no_match ->
-    try eval_sci_no exp
-    with PC.X_no_match ->
-    try eval_int exp
-    with PC.X_no_match ->
-    try eval_fraction exp
-    with PC.X_no_match ->
-    try eval_float exp
-    with PC.X_no_match ->
-    try eval_sci_no exp
-    with PC.X_no_match -> raise X_no_match;; *)
   
   (* -------------------------------------------------------------------------------------------------- *)
 
   (* String and Chars *)
 
-let parse_quote_sign = PC.disj (make_spaced(PC.char '\"')) (make_spaced(PC.char '"'));;
+let parse_string_meta_char =
+  let double_quotes = PC.char_ci '"'
+  and backslash = PC.char_ci '\\'
+  and tab = PC.char_ci 't' 
+  and newFeed = PC.char_ci 'f'
+  and newLine = PC.char_ci 'n'
+  and newLineR = PC.char_ci 'r' in
+  let change_to_real_value = 
+    PC.pack (PC.disj_list [double_quotes; backslash; tab; newFeed; newLine; newLineR]) 
+    (fun (c) -> 
+      match c with 
+      | '\\' -> (char_of_int 92)
+      | '"' -> '"'
+      | 't' -> '\t'
+      | 'f' -> (char_of_int 12)
+      | 'n' -> '\n'
+      | 'r' -> '\r'
+      | _-> raise X_no_match) in
+  PC.pack (PC.caten backslash change_to_real_value) (fun (_, c) -> c);;
 
-let parse_string_meta_char = 
-  let backslash = make_spaced(PC.char '\\')
-  and quote = make_spaced(PC.char '\"')
-  and tab = make_spaced(PC.char '\t') 
-  and newFeed = make_spaced(PC.char (char_of_int 12)) (*\f*)
-  and new_line = make_spaced(PC.char '\n') in
-  (PC.disj_list [backslash; quote; tab; new_line; newFeed]);;
-    
 let parse_string_literal_char =
   PC.const (fun (c) -> c != '\\' && c != '"');;
 
@@ -200,7 +197,11 @@ let parse_string_char = PC.star (PC.disj parse_string_literal_char parse_string_
 let parse_string = 
   PC.caten (PC.caten parse_quote_sign parse_string_char) parse_quote_sign;;
 
-let rec all_sexp sexp = (PC.disj_list [parse_booleans; parse_char;eval_number;parse_symbol;parse_nil;parse_list;
+let eval_strings exp = 
+  let parsed_exp = parse_string exp in
+  (fun (((_, c), _), r) -> (String(list_to_string(c)), r)) parsed_exp;;
+
+let rec all_sexp sexp = (PC.disj_list [parse_booleans; parse_char;eval_number; eval_strings; parse_symbol;parse_nil;parse_list;
 parse_dotted_list;parse_quoted;parse_qquoted;parse_unquoted;parse_unquoted_spliced;parse_sexp_comments]) sexp;
 
 
@@ -317,9 +318,6 @@ and make_spaces_and_sexp_comments nt =
 (* Sharon *)
 
 (* -----------Numbers------------- *)
-
-
-
   
 module Reader: sig
   val read_sexprs : string -> sexpr list
