@@ -75,13 +75,13 @@ let nt_rparen = make_spaces_and_comments (PC.char ')');;
 
 (* Signs *)
 
-let parse_positive_sign = make_spaced(PC.char '+');;
+let parse_positive_sign = PC.char '+';;
 
-let parse_negative_sign = make_spaced(PC.char '-');;
+let parse_negative_sign = PC.char '-';;
 
-let parse_division_sign = make_spaced(PC.char '/');;
+let parse_division_sign = PC.char '/';;
 
-let parse_dot_sign = make_spaced(PC.char '.');;
+let parse_dot_sign = PC.char '.';;
 
 let parse_n = PC.disj (PC.char 'e') (PC.char 'E');;
 
@@ -168,6 +168,7 @@ let rec gcd x y =
   (* -------------------------------------------------------------------------------------------------- *)
 
   (* String and Chars *)
+let parse_quote_sign = PC.disj (PC.char '\"') (PC.char '"');;
 
 let parse_string_meta_char =
   let double_quotes = PC.char_ci '"'
@@ -201,8 +202,8 @@ let eval_strings exp =
   let parsed_exp = parse_string exp in
   (fun (((_, c), _), r) -> (String(list_to_string(c)), r)) parsed_exp;;
 
-let rec all_sexp sexp = (PC.disj_list [parse_booleans; parse_char;eval_number; eval_strings; parse_symbol;parse_nil;parse_list;
-parse_dotted_list;parse_quoted;parse_qquoted;parse_unquoted;parse_unquoted_spliced;parse_sexp_comments]) sexp;
+let rec all_sexp sexp = (make_spaces_and_sexp_comments (PC.disj_list [parse_booleans; parse_char;eval_number; eval_strings; parse_symbol;parse_nil;parse_list;
+parse_dotted_list;parse_quoted;parse_qquoted;parse_unquoted;parse_unquoted_spliced;parse_sexp_comments])) sexp;
 
 
 (* parse booleans *)
@@ -214,19 +215,18 @@ and parse_booleans sexp =
       | "#t" -> Bool(true)
       | _ -> raise X_no_match) in
   let nt_bool = make_spaced nt_bool in
-  (make_spaces_and_sexp_comments nt_bool) sexp;
+  nt_bool sexp;
 
 (* parse nil *)
 
 and parse_nil sexp =
   let nt_nil = pack (make_paired nt_lparen nt_rparen (star (caten (word_ci "#;") all_sexp))) (fun (sexp) -> Nil) in
-  let nt_nil = make_spaces_and_sexp_comments nt_nil in
   nt_nil sexp;
 
 (* parse number *)
 
 and eval_number exp = 
-  (make_spaces_and_sexp_comments (PC.disj_list [eval_sci_no;eval_float;eval_fraction;eval_int])) exp;
+  (PC.disj_list [eval_sci_no;eval_float;eval_fraction;eval_int]) exp;
 
 (* parse symbol *)  
 
@@ -242,7 +242,7 @@ and parse_symbol sexp =
   let plus_symbol_char = PC.pack (PC.caten parse_symbolChar plus_symbol_char) (fun (e,s) ->
   List.append e s) in
   let parse_symbol = PC.pack (disj plus_symbol_char parse_SymbolCharNoDot) (fun (prefix) ->  (Symbol(list_to_string prefix))) in
-  (make_spaces_and_sexp_comments parse_symbol) sexp;
+  parse_symbol sexp;
 
 (* parse char *)
 
@@ -262,7 +262,7 @@ and parse_char sexp =
       | ("#\\", "nul") -> Char '\000'
       | ("#\\", c) -> Char (list_to_string rest).[0]
       | (_, _) -> raise X_no_match) in
-  (make_spaces_and_sexp_comments parse_char) sexp;
+      parse_char sexp;
 
 (* parse pair *)
 
@@ -270,14 +270,14 @@ and parse_list sexp=
   let sexp_list = make_parens (PC.star all_sexp) in
   let sexp_list = PC.pack (sexp_list) (fun sexps ->
   List.fold_left (fun x y -> Pair(y, x)) Nil (List.rev sexps)) in
-  (make_spaces_and_sexp_comments sexp_list) sexp;
+  sexp_list sexp;
   
 and parse_dotted_list sexp = 
   let before_dot = make_spaces_and_comments (PC.plus all_sexp) in
   let with_no_dot = PC.pack (caten before_dot dot) (fun (before,dot) -> before) in
   let dotted_list = PC.pack (caten with_no_dot all_sexp) (fun (before_dot,after_dot) ->
   List.fold_right (fun x y -> match y with Nil -> x | _ -> Pair(x,y)) (List.append before_dot (after_dot::[])) Nil) in
-  (make_spaces_and_sexp_comments (make_parens dotted_list)) sexp;
+  (make_parens dotted_list) sexp;
 
 
 (* parse quote *)
@@ -286,31 +286,31 @@ and parse_quoted sexp =
   let char_quote = PC.char (char_of_int 39) in
   let quote_sexp = PC.pack (PC.caten char_quote all_sexp) (fun (quote,sexp)->
   Pair(Symbol("quote"),Pair(sexp,Nil))) in
-  (make_spaces_and_sexp_comments quote_sexp) sexp;
+  quote_sexp sexp;
 
 and parse_qquoted sexp = 
   let char_qquoted = PC.char (char_of_int 96) in
   let qquoted_sexp = PC.pack (PC.caten char_qquoted all_sexp) (fun (quote,sexp)->
   Pair(Symbol("quasiquote"),Pair(sexp,Nil))) in
-  (make_spaces_and_sexp_comments qquoted_sexp) sexp;
+  qquoted_sexp sexp;
 
 and parse_unquoted sexp = 
   let char_unquoted = PC.char (char_of_int 44) in
   let unquoted_sexp = PC.pack (PC.caten char_unquoted all_sexp) (fun (quote,sexp)->
   Pair(Symbol("unquote"),Pair(sexp,Nil))) in
-  (make_spaces_and_sexp_comments unquoted_sexp) sexp;
+  unquoted_sexp sexp;
 
 and parse_unquoted_spliced sexp = 
   let char_unquoted_spliced = PC.word_ci ",@" in
   let unquoted_spliced_sexp = PC.pack (PC.caten char_unquoted_spliced all_sexp) (fun (quote,sexp)->
   Pair(Symbol("unquote-splicing"),Pair(sexp,Nil))) in
-  (make_spaces_and_sexp_comments unquoted_spliced_sexp) sexp;
+  unquoted_spliced_sexp sexp;
 
 and parse_sexp_comments sexp =
   let start = word_ci "#;" in
   let sexp_comments = pack (caten start all_sexp) (fun (start, sexp) -> sexp) in
   let sexp_comments = pack (caten sexp_comments all_sexp) (fun (sexp1, sexp2) -> sexp2) in
-  (make_spaces_and_sexp_comments sexp_comments) sexp;
+  sexp_comments sexp;
 
 and make_spaces_and_sexp_comments nt =
   (make_paired (star (caten (word "#;") all_sexp)) (star (caten (word "#;") all_sexp)) (make_spaces_and_comments nt));;
@@ -335,7 +335,7 @@ let read_sexprs string =
   let read string = (match ((plus all_sexp) (string_to_list string)) with
     | (sexps, chs) -> sexps) in
   try (read string)
-  with X_no_match -> [];;
+  with X_no_match -> raise X_no_match;;
 
 end;; (* struct Reader *)
 
