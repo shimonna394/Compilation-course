@@ -215,7 +215,7 @@ and parse_booleans sexp =
       | "#t" -> Bool(true)
       | _ -> raise X_no_match) in
   let nt_bool = make_spaced nt_bool in
-  nt_bool sexp;
+  not_followed_by nt_bool (disj_list [parse_symbol;eval_number]) sexp;
 
 (* parse nil *)
 
@@ -226,7 +226,7 @@ and parse_nil sexp =
 (* parse number *)
 
 and eval_number exp = 
-  (PC.disj_list [eval_sci_no;eval_float;eval_fraction;eval_int]) exp;
+  (not_followed_by (PC.disj_list [eval_sci_no;eval_float;eval_fraction;eval_int]) (disj_list [parse_symbol;parse_booleans;parse_char;eval_strings]) exp);
 
 (* parse symbol *)  
 
