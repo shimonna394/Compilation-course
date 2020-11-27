@@ -58,7 +58,11 @@ let reserved_word_list =
 
 (* work on the tag parser starts here *)
 
+(* check if a word is reserved. Symbol -> Boolean*)
+
 let no_reserved_word_exp sym = not (List.mem sym reserved_word_list);;
+
+(* get a Pair and return a list Pair sexpr -> list sexpr *)
 
 let rec pair_to_list pairs =
   match pairs with
@@ -66,21 +70,54 @@ let rec pair_to_list pairs =
   | Pair(car, cdr) -> car :: (pair_to_list cdr)
   | _ -> raise X_syntax_error;;
 
+(* get an sexpr and return its expr Sexpr -> Expr *)  
+
 let rec tag_parse_expr = function
+    (* Const *)
   | Number(sexpr) -> Const(Sexpr(Number(sexpr)))
   | Bool(sexpr) -> Const(Sexpr(Bool(sexpr)))
   | String(sexpr) -> Const(Sexpr(String(sexpr)))
   | Char(sexpr) -> Const(Sexpr(Char(sexpr)))
   | Pair(Symbol("quote"),Pair(sexpr,Nil)) -> Const(Sexpr(sexpr))
+    (* Var *)
   | Symbol(sexpr) when (no_reserved_word_exp sexpr) -> Var(sexpr)
+    (* If *)
   | Pair (Symbol("if"), Pair(test, Pair(thenExpr, Nil))) ->
     If(tag_parse_expr test, tag_parse_expr thenExpr, Const(Void))
   | Pair(Symbol("if"), Pair(test, Pair(thenExpr, Pair(elseExpr, Nil)))) ->
     If(tag_parse_expr test, tag_parse_expr thenExpr, tag_parse_expr elseExpr)
+    (* Or *)
+  | Pair(Symbol("Or"),Nil) -> Const(Sexpr(Bool(false)))
+  | Pair(Symbol("Or"),Pair(sexpr,Nil)) -> tag_parse_expr sexpr
   | Pair(Symbol("Or"),sexpr_list) -> Or(List.map tag_parse_expr (pair_to_list sexpr_list))
-  | Pair(Symbol("begin"),sexpr_list) -> Seq(List.map tag_parse_expr (pair_to_list sexpr_list));;
+    (* Seq *)
+  | Pair(Symbol("begin"),Nil) -> Const(Void)
+  | Pair(Symbol("begin"),Pair(Symbol(sym),Nil)) -> Var(sym)
+  | Pair(Symbol("begin"),sexpr_list) -> Seq(List.map tag_parse_expr (pair_to_list sexpr_list))
+    (* Lambda *)
 
+    (* Macro Expansions *)
+    (* quasiquote *)
+  | Pair(Symbol("quasiquote"),Pair(sexpr,Nil)) -> tag_parse_expr (quasiquote_expr sexpr)
+    (* cond *)
+  |  Pair(Symbol("cond"),Pair(sexpr,Nil)) -> tag_parse_expr (cond_expr sexpr);
 
+    (* take care Macro Expansions of quasiquote Sexpr -> Sexpr  *)
+    and quasiquote_expr sexpr =
+     match sexpr with
+    | Nil -> Pair(Symbol("quote"),Pair(Nil,Nil))
+    | Pair(Symbol("unquote"),Pair(sexpr,Nil)) -> sexpr
+    | Pair(Symbol("unquote-splicing"),Pair(sexpr,Nil)) -> raise X_syntax_error
+    | Symbol(sym) -> Pair(Symbol ("quote"), Pair(Symbol(sym), Nil))
+    | Pair(Pair(Symbol ("unquote-splicing"),Pair(sexpr , Nil)),b) ->
+      Pair(Symbol("append"),Pair(sexpr ,Pair((quasiquote_expr b),Nil)))
+    | Pair(a,Pair(Symbol ("unquote-splicing"),Pair(sexpr,Nil)))->
+      Pair(Symbol("cons"),Pair(quasiquote_expr a,Pair(sexpr,Nil)))
+    | Pair(car, cdr) -> Pair(Symbol "cons", Pair(quasiquote_expr car, Pair(quasiquote_expr cdr, Nil)))
+    |_ ->  sexpr;
+
+    (* take care Macro Expansions of cond Sexpr -> Sexpr  *)
+    and cond_expr sexpr = raise X_not_yet_implemented;;
 
 module Tag_Parser : TAG_PARSER = struct
 
