@@ -100,7 +100,9 @@ let rec tag_parse_expr = function
     (* quasiquote *)
   | Pair(Symbol("quasiquote"),Pair(sexpr,Nil)) -> tag_parse_expr (quasiquote_expr sexpr)
     (* cond *)
-  |  Pair(Symbol("cond"),Pair(sexpr,Nil)) -> tag_parse_expr (cond_expr sexpr);
+  | Pair(Symbol("cond"),ribs) -> tag_parse_expr (cond_expr ribs)
+    (* and *)
+  | Pair(Symbol("and"),sexprs) -> and_expr sexprs;
 
     (* take care Macro Expansions of quasiquote Sexpr -> Sexpr  *)
     and quasiquote_expr sexpr =
@@ -117,7 +119,15 @@ let rec tag_parse_expr = function
     |_ ->  sexpr;
 
     (* take care Macro Expansions of cond Sexpr -> Sexpr  *)
-    and cond_expr sexpr = raise X_not_yet_implemented;;
+    and cond_expr ribs = raise X_not_yet_implemented;
+
+    (* make and with nested if Sexpr -> Expr  *)
+    and and_expr sexprs = 
+     match sexprs with
+    | Nil -> Const(Sexpr(Bool(true)))
+    | Pair(car, Nil) -> tag_parse_expr car
+    | Pair(car, cdr) -> If((tag_parse_expr car) ,(and_expr cdr) ,Const(Sexpr(Bool(false))))
+    | _ -> raise X_syntax_error;
 
 module Tag_Parser : TAG_PARSER = struct
 
