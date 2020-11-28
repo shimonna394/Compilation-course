@@ -83,6 +83,7 @@ let rec get_last_item_on_list lst =
 
 let rec get_list_besides_last_item lst =
   match lst with 
+  | [x] -> []
   | [x; y] -> [x]
   | _ -> (List.hd lst) :: get_list_besides_last_item (List.tl lst);;
 
@@ -120,26 +121,30 @@ let rec tag_parse_expr = function
     (* Lambda *)   
   | Pair(Symbol("lambda"), Pair(args_sexprs, body_sexprs)) -> 
     (* lambdaSimple *)    
-      (try 
-        (let args_exprs = 
-          (match args_sexprs with 
-          | Nil -> [] 
-          | _ -> List.map sym_expr_to_string (pair_to_list args_sexprs))  
-        and body_exprs = 
-          (match body_sexprs with 
-          | Pair(first, Nil) ->  tag_parse_expr first
-          | _ -> Seq(List.map tag_parse_expr (pair_to_list body_sexprs))) in
-        LambdaSimple(args_exprs, body_exprs))
-      with X_syntax_error -> 
-      (* lambdaOpt *)    
-        (let args = (pair_im_to_list args_sexprs) in
-        let args_exprs = (get_list_besides_last_item args)
-        and opt_expr = (sym_expr_to_string (get_last_item_on_list args)) in
-        let body_exprs = 
-          (match body_sexprs with 
-          | Pair(first, Nil) ->  tag_parse_expr first
-          | _ -> Seq(List.map tag_parse_expr (pair_to_list body_sexprs))) in
-        LambdaOpt((List.map sym_expr_to_string args_exprs), opt_expr, body_exprs)))
+    (try 
+      (let args_exprs = 
+        (match args_sexprs with 
+        | Nil -> []                     
+        | _ -> List.map sym_expr_to_string (pair_to_list args_sexprs))  
+      and body_exprs = 
+        (match body_sexprs with 
+        | Pair(first, Nil) ->  tag_parse_expr first
+        | _ -> Seq(List.map tag_parse_expr (pair_to_list body_sexprs))) in
+      LambdaSimple(args_exprs, body_exprs))
+    with X_syntax_error -> 
+    (* lambdaOpt *)    
+      (let args = 
+        (match args_sexprs with
+        | Pair(x, y) -> (pair_im_to_list args_sexprs)
+        | Symbol(s) -> [Symbol(s)]
+        | _ -> raise X_syntax_error) in
+      let args_exprs = (get_list_besides_last_item args)
+      and opt_expr = (sym_expr_to_string (get_last_item_on_list args)) in
+      let body_exprs = 
+        (match body_sexprs with 
+        | Pair(first, Nil) ->  tag_parse_expr first
+        | _ -> Seq(List.map tag_parse_expr (pair_to_list body_sexprs))) in
+      LambdaOpt((List.map sym_expr_to_string args_exprs), opt_expr, body_exprs)))
 
     (* Macro Expansions *)
     (* quasiquote *)
