@@ -92,7 +92,10 @@ let sym_expr_to_string sym_expr =
   | Symbol(s) -> s
   | _ -> raise X_syntax_error;;
 
-
+let get_let_var_from_pair pairs = 
+  match pairs with 
+  | Pair(var, value) -> var 
+  | _ -> raise X_syntax_error;;
 
 (* get an sexpr and return its expr Sexpr -> Expr *)  
 
@@ -145,7 +148,6 @@ let rec tag_parse_expr = function
         | Pair(first, Nil) ->  tag_parse_expr first
         | _ -> Seq(List.map tag_parse_expr (pair_to_list body_sexprs))) in
       LambdaOpt((List.map sym_expr_to_string args_exprs), opt_expr, body_exprs)))
-
     (* Macro Expansions *)
     (* quasiquote *)
   | Pair(Symbol("quasiquote"),Pair(sexpr,Nil)) -> tag_parse_expr (quasiquote_expr sexpr)
@@ -153,6 +155,11 @@ let rec tag_parse_expr = function
   | Pair(Symbol("cond"),ribs) -> tag_parse_expr (cond_expr ribs)
     (* and *)
   | Pair(Symbol("and"),sexprs) -> and_expr sexprs;
+  (* Application *)
+  | Pair(opt, args) -> 
+  let opt_expr = (tag_parse_expr opt)
+  and args_expr = List.map tag_parse_expr (pair_to_list args) in
+  Applic(opt_expr, args_expr)
   | _ -> raise X_syntax_error;
 
   (* take care Macro Expansions of quasiquote Sexpr -> Sexpr  *)
@@ -169,16 +176,20 @@ let rec tag_parse_expr = function
   | Pair(car, cdr) -> Pair(Symbol "cons", Pair(quasiquote_expr car, Pair(quasiquote_expr cdr, Nil)))
   |_ ->  sexpr;
 
-    (* take care Macro Expansions of cond Sexpr -> Sexpr  *)
-    and cond_expr ribs = raise X_not_yet_implemented;
+  (* take care Macro Expansions of cond Sexpr -> Sexpr  *)
+  and cond_expr ribs = raise X_not_yet_implemented;
 
-    (* make and with nested if Sexpr -> Expr  *)
-    and and_expr sexprs = 
-     match sexprs with
-    | Nil -> Const(Sexpr(Bool(true)))
-    | Pair(car, Nil) -> tag_parse_expr car
-    | Pair(car, cdr) -> If((tag_parse_expr car) ,(and_expr cdr) ,Const(Sexpr(Bool(false))))
-    | _ -> raise X_syntax_error;
+  (* make and with nested if Sexpr -> Expr  *)
+  and and_expr sexprs = 
+    match sexprs with
+  | Nil -> Const(Sexpr(Bool(true)))
+  | Pair(car, Nil) -> tag_parse_expr car
+  | Pair(car, cdr) -> If((tag_parse_expr car) ,(and_expr cdr) ,Const(Sexpr(Bool(false))))
+  | _ -> raise X_syntax_error;
+
+  (*and expand_let exprs =     
+    let vars_list = List.map get_let_var_from_pair (pair_to_list exprs) in*)
+
 
 module Tag_Parser : TAG_PARSER = struct
 
