@@ -80,8 +80,7 @@ let rec list_to_pair ls =
   match ls with 
   | [] -> Pair(Nil, Nil)
   | [x] -> Pair(x, Nil) 
-  | x :: y -> Pair(x, list_to_pair y)
-  | _-> raise X_syntax_error
+  | x :: y -> Pair(x, list_to_pair y);;
 
 
 let rec get_last_item_on_list lst =
@@ -115,13 +114,6 @@ let get_let_var_from_pair pairs =
     match binding with 
     | Pair(var, Pair(value, rest)) -> value
     | _ -> raise X_syntax_error;;
-
-let rec create_body_pair args_list = 
-  match args_list with 
-  | [] -> Pair(Nil, Nil)
-  | [x] -> Pair(Symbol("set!"), x)
-  | x :: y -> Pair(Symbol("set!"), Pair(x, create_body_pair y))
-  | _ -> raise X_syntax_error;;
 
 
 (* get an sexpr and return its expr Sexpr -> Expr *)  
@@ -170,7 +162,7 @@ let rec tag_parse_expr = function
       and body_exprs = 
         (match body_sexprs with
         | Pair(first, Nil) -> tag_parse_expr first
-        | _ -> tag_parse_expr body_sexprs) in
+        | _ -> Seq(List.map tag_parse_expr (pair_to_list body_sexprs))) in
       LambdaSimple(args_exprs, body_exprs))
     with X_syntax_error -> 
     (* lambdaOpt *)    
@@ -183,7 +175,7 @@ let rec tag_parse_expr = function
       and body_exprs = 
         (match body_sexprs with
         | Pair(first, Nil) -> tag_parse_expr first
-        | _ -> tag_parse_expr body_sexprs) in
+        | _ -> Seq(List.map tag_parse_expr (pair_to_list body_sexprs))) in
       LambdaOpt((List.map sym_expr_to_string args_exprs), opt_expr, body_exprs)))
     (* Macro Expansions *)
     (* quasiquote *)
@@ -261,12 +253,20 @@ let rec tag_parse_expr = function
 
   and let_macro_expns sexprs = 
   match sexprs with 
-  | Pair(Nil, Pair(body_sexprs, Nil)) -> Applic (LambdaSimple([], tag_parse_expr body_sexprs), [])
-  | Pair(args_pair_sexpr, Pair(body_sexprs, Nil)) -> 
-      let binding_list = (pair_to_list args_pair_sexpr) in
-      let var_list = List.map sym_expr_to_string (List.map get_var_from_let_binding binding_list) 
-      and val_list = List.map get_val_from_let_binding binding_list in
-    Applic (LambdaSimple(var_list, tag_parse_expr body_sexprs), List.map tag_parse_expr val_list)
+  | Pair(args_pair, body_pair) -> 
+    let args = 
+      (match args_pair with 
+      | Nil -> []
+      | _ -> 
+        List.map sym_expr_to_string (List.map get_var_from_let_binding (pair_to_list args_pair)))
+    and body = 
+      (match body_pair with
+      | Pair(body_sexprs, Nil) -> tag_parse_expr body_sexprs
+      | _ -> Seq(List.map tag_parse_expr (pair_to_list body_pair)))
+    and vals = (match args_pair with 
+      | Nil -> []
+      | _ ->  List.map tag_parse_expr (List.map get_val_from_let_binding (pair_to_list args_pair))) in
+    Applic(LambdaSimple(args, body), vals)
   | _ -> raise X_syntax_error;
 
   and let_star_macro_expns sexprs = 
