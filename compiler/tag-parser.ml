@@ -119,6 +119,7 @@ let rec tag_parse_expr = function
   | Pair(Symbol("quote"),Pair(sexpr,Nil)) -> Const(Sexpr(sexpr))
     (* Var *)
   | Symbol(sexpr) when (no_reserved_word_exp sexpr) -> Var(sexpr)
+    (* Set *)
     (* If *)
   | Pair (Symbol("if"), Pair(test, Pair(thenExpr, Nil))) ->
     If(tag_parse_expr test, tag_parse_expr thenExpr, Const(Void))
@@ -134,10 +135,10 @@ let rec tag_parse_expr = function
   | Pair(Symbol("begin"),sexpr_list) -> Seq(List.flatten (List.map seq_expr (List.map tag_parse_expr (pair_to_list sexpr_list))))
     (* define *)
   | Pair(Symbol("define"),defineExpr) -> define_expr defineExpr
-      (* Let *)
+    (* Let *)
   | Pair(Symbol("let"), args_and_body_pair) -> let_expr args_and_body_pair
     (* Let* *)
-  |  Pair(Symbol("let*"), args_and_body_pair) -> let_expr (let_star_expr args_and_body_pair)
+  |  Pair(Symbol("let*"), args_and_body_pair) -> tag_parse_expr (let_star_expr args_and_body_pair)
     (* Lambda *)
   | Pair(Symbol("lambda"), Pair(args_sexprs, body_sexprs)) -> 
     (* lambdaSimple *)    
@@ -145,8 +146,12 @@ let rec tag_parse_expr = function
       (let args_exprs = 
         (match args_sexprs with 
         | Nil -> []                     
-        | _ -> List.map sym_expr_to_string (pair_to_list args_sexprs)) in        
-      LambdaSimple(args_exprs, tag_parse_expr body_sexprs))
+        | _ -> List.map sym_expr_to_string (pair_to_list args_sexprs))  
+      and body_exprs = 
+        (match body_sexprs with
+        | Pair(first, Nil) -> tag_parse_expr first
+        | _ -> tag_parse_expr body_sexprs) in
+      LambdaSimple(args_exprs, body_exprs))
     with X_syntax_error -> 
     (* lambdaOpt *)    
       (let args = 
@@ -154,8 +159,12 @@ let rec tag_parse_expr = function
         | Symbol(s) -> [Symbol(s)]
         | _ -> pair_im_to_list args_sexprs) in
       let args_exprs = (get_list_besides_last_item args)
-      and opt_expr = (sym_expr_to_string (get_last_item_on_list args)) in
-      LambdaOpt((List.map sym_expr_to_string args_exprs), opt_expr, tag_parse_expr body_sexprs)))
+      and opt_expr = (sym_expr_to_string (get_last_item_on_list args)) 
+      and body_exprs = 
+        (match body_sexprs with
+        | Pair(first, Nil) -> tag_parse_expr first
+        | _ -> tag_parse_expr body_sexprs) in
+      LambdaOpt((List.map sym_expr_to_string args_exprs), opt_expr, body_exprs)))
     (* Macro Expansions *)
     (* quasiquote *)
   | Pair(Symbol("quasiquote"),Pair(sexpr,Nil)) -> tag_parse_expr (quasiquote_expr sexpr)
@@ -163,7 +172,7 @@ let rec tag_parse_expr = function
   | Pair(Symbol("cond"),ribs) -> cond_expr ribs
     (* and *)
   | Pair(Symbol("and"),sexprs) -> and_expr sexprs
-  (* Application *)
+    (* Application *)
   | Pair(opt, args) -> 
   let opt_expr = (tag_parse_expr opt)
   and args_expr = (
