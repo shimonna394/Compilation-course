@@ -26,9 +26,10 @@ let rec sexpr_eq s1 s2 =
   | Char(c1), Char(c2) -> c1 = c2
   | String(s1), String(s2) -> s1 = s2
   | Symbol(s1), Symbol(s2) -> s1 = s2
-  | Pair(car1, cdr1), Pair(car2, cdr2) -> (sexpr_eq car1 car2) && (sexpr_eq cdr1 cdr2);;
+  | Pair(car1, cdr1), Pair(car2, cdr2) -> (sexpr_eq car1 car2) && (sexpr_eq cdr1 cdr2)
+  | _ -> false;;
 
-  (* Shimi *)
+(* Shimi *)
 
 (* General functions *)
 
@@ -215,7 +216,7 @@ and parse_booleans sexp =
       | "#t" -> Bool(true)
       | _ -> raise X_no_match) in
   let nt_bool = make_spaced nt_bool in
-  not_followed_by nt_bool (disj_list [parse_symbol;eval_number]) sexp;
+  nt_bool sexp;
 
 (* parse nil *)
 
@@ -226,7 +227,7 @@ and parse_nil sexp =
 (* parse number *)
 
 and eval_number exp = 
-  (not_followed_by (PC.disj_list [eval_sci_no;eval_float;eval_fraction;eval_int]) (disj_list [parse_symbol;parse_booleans;parse_char;eval_strings]) exp);
+  (not_followed_by (PC.disj_list [eval_sci_no;eval_float;eval_fraction;eval_int]) (disj_list [parse_symbol]) exp);
 
 (* parse symbol *)  
 
@@ -276,7 +277,7 @@ and parse_dotted_list sexp =
   let before_dot = make_spaces_and_comments (PC.plus all_sexp) in
   let with_no_dot = PC.pack (caten before_dot dot) (fun (before,dot) -> before) in
   let dotted_list = PC.pack (caten with_no_dot all_sexp) (fun (before_dot,after_dot) ->
-  List.fold_right (fun x y -> match y with Nil -> x | _ -> Pair(x,y)) (List.append before_dot (after_dot::[])) Nil) in
+  List.fold_right (fun x y -> Pair(x,y)) (before_dot) after_dot) in
   (make_parens dotted_list) sexp;
 
 
@@ -335,7 +336,7 @@ let read_sexprs string =
   let read string = (match ((plus all_sexp) (string_to_list string)) with
     | (sexps, chs) -> sexps) in
   try (read string)
-  with X_no_match -> raise X_no_match;;
+  with X_no_match -> [];;
 
 end;; (* struct Reader *)
 
