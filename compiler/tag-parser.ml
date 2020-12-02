@@ -70,43 +70,59 @@ let rec pair_to_list pairs =
   | Pair(car, cdr) -> car :: (pair_to_list cdr)
   | _ -> raise X_syntax_error;;
 
-  let rec pair_im_to_list pairs =
-    match pairs with
-    | Symbol(s) -> [Symbol(s)]
-    | Pair(car, cdr) -> car :: (pair_im_to_list cdr)
-    | _ -> raise X_syntax_error;;  
-  
-  let rec get_last_item_on_list lst =
-    match lst with 
-    | [x] -> x
-    | _ -> (get_last_item_on_list (List.tl lst));;
-  
-  let rec get_list_besides_last_item lst =
-    match lst with 
-    | [x] -> []
-    | [x; y] -> [x]
-    | _ -> (List.hd lst) :: get_list_besides_last_item (List.tl lst);;
-  
-  let sym_expr_to_string sym_expr =
-    match sym_expr with 
-    | Symbol(s) -> s
+let rec pair_im_to_list pairs =
+  match pairs with
+  | Symbol(s) -> [Symbol(s)]
+  | Pair(car, cdr) -> car :: (pair_im_to_list cdr)
+  | _ -> raise X_syntax_error;;  
+
+let rec list_to_pair ls = 
+  match ls with 
+  | [] -> Pair(Nil, Nil)
+  | [x] -> Pair(x, Nil) 
+  | x :: y -> Pair(x, list_to_pair y)
+  | _-> raise X_syntax_error
+
+
+let rec get_last_item_on_list lst =
+  match lst with 
+  | [x] -> x
+  | _ -> (get_last_item_on_list (List.tl lst));;
+
+let rec get_list_besides_last_item lst =
+  match lst with 
+  | [x] -> []
+  | [x; y] -> [x]
+  | _ -> (List.hd lst) :: get_list_besides_last_item (List.tl lst);;
+
+let sym_expr_to_string sym_expr =
+  match sym_expr with 
+  | Symbol(s) -> s
+  | _ -> raise X_syntax_error;;
+
+let get_let_var_from_pair pairs = 
+  match pairs with 
+  | Pair(var, value) -> var 
+  | _ -> raise X_syntax_error;;
+
+
+  let get_var_from_let_binding binding = 
+    match binding with 
+    | Pair(var, Pair(value, rest)) -> var
     | _ -> raise X_syntax_error;;
-  
-  let get_let_var_from_pair pairs = 
-    match pairs with 
-    | Pair(var, value) -> var 
+
+  let get_val_from_let_binding binding = 
+    match binding with 
+    | Pair(var, Pair(value, rest)) -> value
     | _ -> raise X_syntax_error;;
 
+let rec create_body_pair args_list = 
+  match args_list with 
+  | [] -> Pair(Nil, Nil)
+  | [x] -> Pair(Symbol("set!"), x)
+  | x :: y -> Pair(Symbol("set!"), Pair(x, create_body_pair y))
+  | _ -> raise X_syntax_error;;
 
-    let get_var_from_let_binding binding = 
-      match binding with 
-      | Pair(Symbol(var), Pair(value, rest)) -> var
-      | _ -> raise X_syntax_error;;
-
-    let get_val_from_let_binding binding = 
-      match binding with 
-      | Pair(var, Pair(value, rest)) -> value
-      | _ -> raise X_syntax_error;;
 
 (* get an sexpr and return its expr Sexpr -> Expr *)  
 
@@ -119,7 +135,10 @@ let rec tag_parse_expr = function
   | Pair(Symbol("quote"),Pair(sexpr,Nil)) -> Const(Sexpr(sexpr))
     (* Var *)
   | Symbol(sexpr) when (no_reserved_word_exp sexpr) -> Var(sexpr)
-    (* Set *)
+    (* set! *)
+  | Pair(Symbol("set!"), Pair(var_sexpr, Pair(val_sexpr, Nil))) -> Set(tag_parse_expr var_sexpr, tag_parse_expr val_sexpr)  
+    (* pset! *)
+  | Pair(Symbol("pset!"), pset_bang_body) -> pset_bang_macro_expns pset_bang_body 
     (* If *)
   | Pair (Symbol("if"), Pair(test, Pair(thenExpr, Nil))) ->
     If(tag_parse_expr test, tag_parse_expr thenExpr, Const(Void))
@@ -136,9 +155,10 @@ let rec tag_parse_expr = function
     (* define *)
   | Pair(Symbol("define"),defineExpr) -> define_expr defineExpr
     (* Let *)
-  | Pair(Symbol("let"), args_and_body_pair) -> let_expr args_and_body_pair
+  | Pair(Symbol("let"), args_and_body_pair) -> let_macro_expns args_and_body_pair
     (* Let* *)
-  |  Pair(Symbol("let*"), args_and_body_pair) -> tag_parse_expr (let_star_expr args_and_body_pair)
+  |  Pair(Symbol("let*"), args_and_body_pair) -> tag_parse_expr (let_star_macro_expns args_and_body_pair)
+  | Pair(Symbol("letrec"), args_and_body_pair) -> tag_parse_expr (letrec_macro_expns args_and_body_pair)
     (* Lambda *)
   | Pair(Symbol("lambda"), Pair(args_sexprs, body_sexprs)) -> 
     (* lambdaSimple *)    
@@ -239,25 +259,41 @@ let rec tag_parse_expr = function
     | _ -> raise X_syntax_error;
 
 
-  and let_expr sexprs = 
+  and let_macro_expns sexprs = 
   match sexprs with 
   | Pair(Nil, Pair(body_sexprs, Nil)) -> Applic (LambdaSimple([], tag_parse_expr body_sexprs), [])
   | Pair(args_pair_sexpr, Pair(body_sexprs, Nil)) -> 
       let binding_list = (pair_to_list args_pair_sexpr) in
-      let var_list = List.map get_var_from_let_binding binding_list 
+      let var_list = List.map sym_expr_to_string (List.map get_var_from_let_binding binding_list) 
       and val_list = List.map get_val_from_let_binding binding_list in
     Applic (LambdaSimple(var_list, tag_parse_expr body_sexprs), List.map tag_parse_expr val_list)
   | _ -> raise X_syntax_error;
 
-  and let_star_expr sexprs = 
+  and let_star_macro_expns sexprs = 
     match sexprs with 
     | Pair(args_pair_sexpr, body_sexprs) -> 
         (match args_pair_sexpr with 
         | Nil -> Pair(Symbol("let"), Pair(Nil, body_sexprs))
         | Pair(first_binding, Nil) -> Pair(Symbol("let"), Pair(args_pair_sexpr, body_sexprs))
-        | Pair(first_binding, rest) -> Pair(Symbol("let"), Pair(Pair(first_binding, Nil), Pair((let_star_expr (Pair(rest, body_sexprs)), Nil))))
+        | Pair(first_binding, rest) -> Pair(Symbol("let"), Pair(Pair(first_binding, Nil), Pair((let_star_macro_expns (Pair(rest, body_sexprs)), Nil))))
         | _ -> raise X_syntax_error)
     | _ -> raise X_syntax_error;
+
+  and pset_bang_macro_expns sexprs = 
+      let sets_list = List.map (fun (pair) -> Pair(Symbol("set!"), pair)) (pair_to_list sexprs) in            
+      Seq(List.map tag_parse_expr sets_list);
+
+  and letrec_macro_expns sexprs = 
+    match sexprs with 
+    | Pair(args, body) ->
+      let args = (pair_to_list args) in
+      let vars_list = List.map get_var_from_let_binding args in
+      let new_args_pair = list_to_pair (List.map (fun (x) -> Pair(x, String("Sharon"))) vars_list) 
+      and vals_list = List.map get_val_from_let_binding args 
+      and new_body_list = List.map (fun (x) -> Pair(Symbol("set!"), x)) args in
+      Pair(Symbol("let"), Pair(new_args_pair, list_to_pair (List.append vals_list new_body_list)))
+    | _ -> raise X_syntax_error
+      
 
 
 module Tag_Parser : TAG_PARSER = struct
