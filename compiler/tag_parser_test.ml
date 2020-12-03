@@ -141,7 +141,7 @@ let test49 = test_exp (tag_parse_expressions([Pair (Symbol "let*",Pair (Pair (Pa
 
 
 
-(* let testLetRec = test_exp (tag_parse_expressions([Pair (Symbol "letrec",Pair (Pair (Pair (Symbol "a", Pair (Number (Fraction (1, 1)), Nil)), Nil),
+ let testLetRec = test_exp (tag_parse_expressions([Pair (Symbol "letrec",Pair (Pair (Pair (Symbol "a", Pair (Number (Fraction (1, 1)), Nil)), Nil),
  Pair (Number (Fraction (1, 1)), Nil)))])) ([Applic(LambdaSimple (["a"],Seq[Set (Var "a", Const (Sexpr (Number (Fraction (1, 1)))));
      Applic (LambdaSimple ([], Const (Sexpr (Number (Fraction (1, 1))))), [])]),
  [Const (Sexpr (Symbol "whatever"))])]);;
@@ -160,7 +160,7 @@ let testLetRec3 = test_exp (tag_parse_expressions([Pair (Symbol "letrec",Pair(Pa
         Seq [Const (Sexpr (Number (Fraction (1, 1)))); Var "a"]),
       [])]),
  [Const (Sexpr (Symbol "whatever")); Const (Sexpr (Symbol "whatever"));
-  Const (Sexpr (Symbol "whatever"))])]);; *)
+  Const (Sexpr (Symbol "whatever"))])]);; 
 
  
  let test55 = test_exp (tag_parse_expressions([Pair (Symbol "and", Pair (Number (Fraction(1,1)),Pair (Number (Fraction(1,1)),Pair (Number (Fraction(1,1)),Pair (Number (Fraction(1,1)),Pair (Number (Fraction(1,1)),Pair (Number (Fraction(1,1)),Pair (Number (Fraction(1,1)),Pair (Number (Fraction(1,1)),Pair (Number (Fraction(1,1)), Pair (Number (Fraction(1,1)), Nil)))))))))))])) ([If (Const (Sexpr (Number (Fraction(1,1)))),If (Const (Sexpr (Number (Fraction(1,1)))),If (Const (Sexpr (Number (Fraction(1,1)))),If (Const (Sexpr (Number (Fraction(1,1)))),If (Const (Sexpr (Number (Fraction(1,1)))),If (Const (Sexpr (Number (Fraction(1,1)))),If (Const (Sexpr (Number (Fraction(1,1)))),If (Const (Sexpr (Number (Fraction(1,1)))),If (Const (Sexpr (Number (Fraction(1,1)))), Const (Sexpr (Number (Fraction(1,1)))),Const (Sexpr (Bool false))),Const (Sexpr (Bool false))),Const (Sexpr (Bool false))),Const (Sexpr (Bool false))),Const (Sexpr (Bool false))),Const (Sexpr (Bool false))),Const (Sexpr (Bool false))),Const (Sexpr (Bool false))),Const (Sexpr (Bool false)))]);;  

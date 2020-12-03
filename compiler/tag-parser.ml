@@ -288,10 +288,11 @@ let rec tag_parse_expr = function
     | Pair(args, body) ->
       let args = (pair_to_list args) in
       let vars_list = List.map get_var_from_let_binding args in
-      let new_args_pair = list_to_pair (List.map (fun (x) -> Pair(x, String("Sharon"))) vars_list) 
+      let new_args_pair = list_to_pair (List.map (fun (x) -> Pair(x, Pair(Symbol("whatever"), Nil))) vars_list) 
       and vals_list = List.map get_val_from_let_binding args 
       and new_body_list = List.map (fun (x) -> Pair(Symbol("set!"), x)) args in
-      Pair(Symbol("let"), Pair(new_args_pair, list_to_pair (List.append vals_list new_body_list)))
+      let wrapped_let_vals = Pair(Symbol("let"), Pair(Nil, (list_to_pair vals_list))) in
+      Pair(Symbol("let"), Pair(new_args_pair, list_to_pair (List.append new_body_list [wrapped_let_vals])))
     | _ -> raise X_syntax_error
       
 
