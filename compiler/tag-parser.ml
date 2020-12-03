@@ -286,13 +286,13 @@ let rec tag_parse_expr = function
   and letrec_macro_expns sexprs = 
     match sexprs with 
     | Pair(args, body) ->
-      let args = (pair_to_list args) in
+      let place_holder = Pair(Symbol("quote"),Pair(Symbol("whatever"),Nil))
+      and args = (pair_to_list args) in
       let vars_list = List.map get_var_from_let_binding args in
-      let new_args_pair = list_to_pair (List.map (fun (x) -> Pair(x, Pair(Symbol("whatever"), Nil))) vars_list) 
-      and vals_list = List.map get_val_from_let_binding args 
+      let new_args_pair = list_to_pair (List.map (fun (x) -> Pair(x, Pair(place_holder, Nil))) vars_list) 
+      and vals_list = (pair_to_list body)
       and new_body_list = List.map (fun (x) -> Pair(Symbol("set!"), x)) args in
-      let wrapped_let_vals = Pair(Symbol("let"), Pair(Nil, (list_to_pair vals_list))) in
-      Pair(Symbol("let"), Pair(new_args_pair, list_to_pair (List.append new_body_list [wrapped_let_vals])))
+      Pair(Symbol("let"), Pair(new_args_pair, list_to_pair (List.append new_body_list vals_list)))
     | _ -> raise X_syntax_error
       
 

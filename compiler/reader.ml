@@ -140,10 +140,11 @@ let rec gcd x y =
     let parsed_exp = parse_fraction exp in
     let nt = (fun (l, r) -> l)parsed_exp
     and rest = (fun (l,r) ->r)parsed_exp in
-    let numerator = (fun (((sign, num),div),frac) -> int_of_string((String.make 1 sign) ^ list_to_string(num))) nt   
-    and denominator = (fun (((sign, num),div),frac) -> int_of_string(list_to_string(frac))) nt in 
+    let numerator = (fun (((sign, num),div),frac) -> int_of_string(list_to_string(num))) nt   
+    and denominator = (fun (((sign, num),div),frac) -> int_of_string(list_to_string(frac))) nt 
+    and sign = (fun (((sign, num),div),frac) -> int_of_string((String.make 1 sign) ^ "1")) nt in 
     let gcdVal = (gcd numerator denominator) in        
-    (Number(Fraction(numerator / gcdVal, denominator / gcdVal)), rest);;
+    (Number(Fraction((sign * numerator) / gcdVal, denominator / gcdVal)), rest);;
   
   let eval_float exp = 
     let parsed_exp = parse_float exp in
