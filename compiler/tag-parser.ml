@@ -237,9 +237,9 @@ let rec tag_parse_expr = function
       Pair(Nil, Pair(Pair(Symbol("cond"), rest_of_ribs), Nil))), Nil)
       ), Nil))), Pair(Pair(Symbol("if"), Pair(Symbol("value"),
       Pair(Pair(Pair(Symbol("f"), Nil), Pair(Symbol("value"), Nil)), Pair(Pair(Symbol("rest"), Nil), Nil)))), Nil))))
-    | Pair(Pair(Symbol("else"),expr_list),Nil) -> (tag_parse_expr (Pair(Symbol("begin"), expr_list)))
-    | Pair(Pair(cond, rib1), Nil) -> If(tag_parse_expr cond, (tag_parse_expr (Pair(Symbol("begin"), rib1))), Const(Void))
-    | Pair(Pair(cond, rib1), rest_of_ribs) -> If(tag_parse_expr cond, (tag_parse_expr (Pair(Symbol("begin"), rib1))), cond_expr rest_of_ribs)
+    | Pair(Pair(Symbol("else"),expr_list),_) -> tag_parse_expr (Pair(Symbol("begin"), expr_list))
+    | Pair(Pair(cond, rib1), Nil) ->  If(tag_parse_expr cond, tag_parse_expr (Pair(Symbol("begin"), rib1)), Const(Void)) 
+    | Pair(Pair(cond, rib1), rest_of_ribs) ->   If(tag_parse_expr cond, tag_parse_expr (Pair(Symbol("begin"), rib1)), cond_expr rest_of_ribs) 
     | _ -> raise X_syntax_error;
 
     (* make and with nested if Sexpr -> Expr  *)
