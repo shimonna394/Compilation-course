@@ -48,7 +48,11 @@ let rec expr'_eq e1 e2 =
 	 (expr'_eq e1 e2) &&
 	   (List.for_all2 expr'_eq args1 args2)
   | _ -> false;;
-	
+  
+  let rec get_list_of_args_list count depth args =
+    match args with 
+    | [] -> []
+    | hd :: tl -> [hd; string_of_int count; string_of_int depth] :: (get_list_of_args_list (count + 1) depth tl)
                        
 exception X_syntax_error;;
 
@@ -61,33 +65,39 @@ end;;
 
 module Semantics : SEMANTICS = struct
 
-let rec demonstrate_lexical_enviornment stack expr = 
+let rec get_list_of_args_list count depth args =
+  match args with 
+  | [] -> []
+  | hd :: tl -> [hd; string_of_int count; string_of_int depth] :: (get_list_of_args_list (count + 1) depth tl)
+
+let check_stack_and_return_var stack depth str = 
+  match (List.filter (fun(pair) -> String.equal (List.hd pair) str) stack) with
+  | [] -> VarFree(str)
+  | [s; i; d] :: rest -> 
+    let d = int_of_string d 
+    and i = int_of_string i in
+    if(d + 1 == depth) then VarParam(str, i) else VarBound(str, i, depth - d - 1)
+  | _ -> raise X_syntax_error;;
+    
+let rec dem_lex_env stack depth expr = 
   match (expr) with 
   | Const(expr) -> Const'(expr)
-  | If(test, dit, dif) -> If'(demonstrate_lexical_enviornment stack test,
-                              demonstrate_lexical_enviornment stack dit,
-                              demonstrate_lexical_enviornment stack dif)
-  | Or(exprs) -> Or'(List.map (demonstrate_lexical_enviornment stack) exprs)
-  | Seq(exprs) -> Seq'(List.map (demonstrate_lexical_enviornment stack) exprs)
-  | Set(Var(str), value) -> 
-      let filteredList = List.filter (fun (pair) -> (List.hd (List.tl pair)) == str) stack  in
-      if(List.length filteredList == 0)    
-      then Set'(VarFree(str), demonstrate_lexical_enviornment stack value)
-      else 
-        let loc = int_of_string (List.hd (List.hd filteredList)) in
-        Set'(VarParam(str, loc), demonstrate_lexical_enviornment stack value)
-  | Def(Var(str), value) -> Def'(VarFree(str), demonstrate_lexical_enviornment stack value)
-  | Var(str) -> 
-      let filteredList = List.filter (fun (pair) -> (List.hd (List.tl pair)) == str) stack  in
-      if(List.length filteredList == 0)    
-      then Var'(VarFree(str))
-      else 
-        let loc = int_of_string (List.hd (List.hd filteredList)) in
-        Var'(VarParam(str, loc))
-  | LambdaSimple(args, body) -> (* Either add another number to stack arrays or add another array*)
+  | If(test, dit, dif) -> If'(dem_lex_env stack depth test, dem_lex_env stack depth dit, dem_lex_env stack depth dif)
+  | Or(exprs) -> Or'(List.map (dem_lex_env stack depth) exprs)
+  | Seq(exprs) -> Seq'(List.map (dem_lex_env stack depth) exprs)  
+  | LambdaSimple(args, body) -> 
+    let new_stack = get_list_of_args_list 0 depth args in    
+    LambdaSimple'(args, dem_lex_env (new_stack @ stack) (depth + 1) body)
+  | LambdaOpt(args, opt, body) -> 
+    let new_stack = get_list_of_args_list 0 depth (args @ [opt]) in    
+    LambdaOpt'(args, opt, dem_lex_env (new_stack @ stack) (depth + 1) body)
+  | Var(str) -> Var'(check_stack_and_return_var stack depth str)      
+  | Set(Var(str), value) -> Set'(check_stack_and_return_var stack depth str, dem_lex_env stack depth value)
+  | Def(Var(str), value) -> Def'(check_stack_and_return_var stack depth str, dem_lex_env stack depth value)
+  | Applic(expr, exprs) -> Applic'(dem_lex_env stack depth expr, List.map (dem_lex_env stack depth) exprs)
   | _ -> raise X_not_yet_implemented;;
 
-let annotate_lexical_addresses e = raise X_not_yet_implemented;; 
+let annotate_lexical_addresses e = dem_lex_env [] 0 e;; 
 
 let annotate_tail_calls e = raise X_not_yet_implemented;;
 
