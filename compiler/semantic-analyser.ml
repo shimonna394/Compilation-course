@@ -76,7 +76,7 @@ let check_stack_and_return_var stack depth str =
   | [s; i; d] :: rest -> 
     let d = int_of_string d 
     and i = int_of_string i in
-    if(d + 1 == depth) then VarParam(str, i) else VarBound(str, i, depth - d - 1)
+    if(d + 1 == depth) then VarParam(str, i) else VarBound(str, depth - d - 2, i)
   | _ -> raise X_syntax_error;;
     
 let rec dem_lex_env stack depth expr = 
@@ -106,29 +106,49 @@ let rec dem_lex_env stack depth expr =
    | BoxSet'(var,exp) -> BoxSet'(var, (demonstrate_tail_calls in_tail_p exp))
    | If'(test,then_expr,else_expr) -> If'((demonstrate_tail_calls false test),
      (demonstrate_tail_calls in_tail_p then_expr),
-     (demonstrate_tail_calls in_tail_p then_expr))
+     (demonstrate_tail_calls in_tail_p else_expr))
    | Seq'(expr_list) -> Seq'(last_in_tail expr_list)
    | Def'(var,exp) -> Def'(var, (demonstrate_tail_calls false exp)) 
    | Set'(var,exp) -> Set'(var, (demonstrate_tail_calls false exp)) 
    | Or'(expr_list) -> Or'(last_in_tail expr_list)
    | LambdaSimple'(args,body) -> LambdaSimple'(args,(demonstrate_tail_calls true body))
    | LambdaOpt'(args,opt,body) -> LambdaOpt'(args,opt,(demonstrate_tail_calls true body))
-   | Applic'(proc,args) -> (match in_tail_p with
-   | true -> ApplicTP'((demonstrate_tail_calls false proc), (List.map (demonstrate_tail_calls false) args))
-   | _ -> Applic'((demonstrate_tail_calls false proc), (List.map (demonstrate_tail_calls false) args)))
+   | Applic'(proc,args) -> (if in_tail_p
+     then ApplicTP'((demonstrate_tail_calls false proc), (List.map (demonstrate_tail_calls false) args))
+     else Applic'((demonstrate_tail_calls false proc), (List.map (demonstrate_tail_calls false) args)))
    | ApplicTP'(proc,args) -> ApplicTP'((demonstrate_tail_calls false proc), (List.map (demonstrate_tail_calls false) args));
    
   and last_in_tail expr_list = 
     let reverse_list = (List.rev expr_list) in
     let last_expr = (List.hd reverse_list) in
     let rest_expr_list = (List.rev (List.tl reverse_list)) in
-    (List.append (List.map (demonstrate_tail_calls false) rest_expr_list) [demonstrate_tail_calls true last_expr]);;  
+    (List.append (List.map (demonstrate_tail_calls false) rest_expr_list) [demonstrate_tail_calls true last_expr]);;
+
+let rec dem_boxing expr = 
+  expr;;
+  (* match expr with
+   | Const'(expr) -> Const'(expr)
+   | Var'(expr) -> Var'(expr)
+   | Box'(expr) -> Box'(expr)
+   | BoxGet'(expr) -> BoxGet'(expr)
+   | BoxSet'(var,exp) -> BoxSet'(var, (dem_boxing exp))
+   | If'(test,then_expr,else_expr) -> If'((dem_boxing test),
+     (dem_boxing then_expr),
+     (dem_boxing then_expr))
+   | Seq'(expr_list) -> Seq'(List.map dem_boxing expr_list)
+   | Def'(var,exp) -> Def'(var, (dem_boxing exp)) 
+   | Set'(var,exp) -> Set'(var, (dem_boxing exp)) 
+   | Or'(expr_list) -> Or'(List.map dem_boxing expr_list)
+   | LambdaSimple'(args,body) -> LambdaSimple'(args,body)
+   | LambdaOpt'(args,opt,body) -> LambdaOpt'(args,opt,body)
+   | Applic'(proc,args) -> Applic'((dem_boxing proc), (List.map dem_boxing args))
+   | ApplicTP'(proc,args) -> ApplicTP'((dem_boxing proc), (List.map dem_boxing args));; *)
 
 let annotate_lexical_addresses e = dem_lex_env [] 0 e;; 
 
 let annotate_tail_calls e = demonstrate_tail_calls false e;;
 
-let box_set e = raise X_not_yet_implemented;;
+let box_set e = dem_boxing e;;
 
 let run_semantics expr =
   box_set
