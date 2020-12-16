@@ -180,10 +180,33 @@ let rec dem_boxing expr =
    | Applic'(proc,args) -> Applic'((dem_boxing proc), (List.map dem_boxing args))
    | ApplicTP'(proc,args) -> ApplicTP'((dem_boxing proc), (List.map dem_boxing args));
 
+  and check_cond param write_occur read_occur expr =
+    match expr with 
+     | Seq'(expr_list) -> 
+       (match expr_list with
+       | car :: [] -> not(write_occur && read_occur)
+       | car :: cdr -> 
+         (match car with 
+         | Set'(var_exp, val_name) when param = 
+            (match var_exp with 
+            | VarBound(var_name, _, _) -> var_name 
+            | VarParam(var_name, _) -> var_name) -> 
+           ((check_cond param true read_occur val_name) 
+             && (List.fold_left (&&) true (List.map (check_cond param true read_occur) cdr)))
+         | Var'(var_expr) -> 
+            (match var_expr with 
+            | VarBound(var_name, minor, major) when var_name = param -> 
+            (List.fold_left (&&) true (List.map (check_cond param write_occur true) cdr))         
+            | VarParam(var_name, minor) when var_name = param -> 
+            (List.fold_left (&&) true (List.map (check_cond param write_occur true) cdr))
+            | _ -> (List.fold_left (&&) true (List.map (check_cond param write_occur read_occur) cdr)))
+         | _ -> true))
+     |_ -> true;
+     
    (* handle lambda case - check we need boxing, if yes box the expr*)
 and handle_box_lambda args body index =
  match args with
-   | car :: cdr -> (if (check_boxing car body)
+   | car :: cdr -> (if ((check_boxing car body) && (check_cond car false false body))
    then (let boxed_body1 = (add_boxing car body index) in
     let boxed_body = (match boxed_body1 with
        | Seq'(Set'((VarParam(name1, index1)), Box'(VarParam(name2, index2))) :: expr_list) when (name1 = name2) ->
@@ -274,30 +297,6 @@ and check_boxing param expr =
      ((List.length remaining) > 0) in
      let lst = List.map (check_writes) !read_occurs in
      List.fold_right (fun a b -> a || b) lst false;;
-
-
-
-
-
-(* and check_cond1 param write_occur expr =
- match expr with 
-  | Seq'(expr_list) -> (match expr_list with
-   | car :: [] -> (if (write_occur)
-     then (check_read param car) 
-     else false)
-   | car :: cdr -> (match car with 
-     Set'(var_name,val_name) when var_name = param -> 
-     (let check_rest = (List.map (check_read param) cdr) in
-     if(List.mem true check_rest)
-     then true
-     else false)
-   | _ -> false
-   
- and check_read param expr = 
-    
-*)
-
- 
 
 let annotate_lexical_addresses e = dem_lex_env [] 0 e;; 
 
