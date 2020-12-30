@@ -31,6 +31,8 @@ module type CODE_GEN = sig
   val generate : (constant * (int * string)) list -> (string * int) list -> expr' -> string
 end;;
 
+module Code_Gen : CODE_GEN = struct
+
 let empty_func =
   fun x -> ();;
 
@@ -166,10 +168,32 @@ let rec get_sexp_list expr' =
     take_second empty_all ans;; 
 
      (* end of const tables *)
+         (* Sharon *)
+  let rec append_if_not_exists_expended name acc table =
+    match acc with 
+    | [] -> table @ [(name, (List.length table))]
+    | first :: rest -> 
+      (match first with 
+      | (other, _) when other = name -> table
+      | (other, _) -> (append_if_not_exists_expended name rest table));;
 
-module Code_Gen : CODE_GEN = struct
+  let append_if_not_exists name table = (append_if_not_exists_expended name table table);;
+
+  let rec get_fvar_table_expended expr'_list table =
+    match expr'_list with 
+    | [] -> table
+    | expr' :: rest -> 
+      (match expr' with 
+      | Def'(VarFree(name), _) -> (get_fvar_table_expended rest (append_if_not_exists name table))
+      | Applic'(Var'(VarFree(name)), _) -> (get_fvar_table_expended rest (append_if_not_exists name table))
+      | ApplicTP'(Var'(VarFree(name)), _) -> (get_fvar_table_expended rest (append_if_not_exists name table))
+      | Seq'(exprs') -> (get_fvar_table_expended exprs' table)
+      | _ -> (get_fvar_table_expended rest table));;
+
+  let get_fvar_table expr'_list = (get_fvar_table_expended expr'_list []);;
+
   let make_consts_tbl asts = get_const_tables asts;; 
-  let make_fvars_tbl asts = raise X_not_yet_implemented;;
+  let make_fvars_tbl asts = get_fvar_table asts;;
   let generate consts fvars e = raise X_not_yet_implemented;;
 end;;
 
