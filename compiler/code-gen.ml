@@ -31,6 +31,7 @@ module type CODE_GEN = sig
   val generate : (constant * (int * string)) list -> (string * int) list -> expr' -> string
 end;;
 
+
 module Code_Gen : CODE_GEN = struct
 
   let empty_func =
@@ -199,33 +200,64 @@ module Code_Gen : CODE_GEN = struct
     let add_count = counter := !counter+1 in
     take_second add_count ans;;
 
-   let rec main_generate const_tbl fvars expr' = 
-    match expr' with
-    | Const'(Sexpr(sexp)) -> "mov rax, const_tbl+"^string_of_int (get_index_from_table const_tbl sexp)^"\n"
-    | Const'(Void) -> "mov rax, const_tbl+0\n"
-    | Box'(var) -> (main_generate const_tbl fvars (Var'(var)))^
-      "push rax\n
-       MALLOC rax, 8\n
-       pop qword [rax]\n"
-    | BoxGet'(var) -> (main_generate const_tbl fvars (Var'(var)))^
-     "mov rax, qword[rax]\n" 
-    | BoxSet'(var, expr) -> (main_generate const_tbl fvars expr)^
-     "push rax\n"^
-     (main_generate const_tbl fvars (Var'(var)))^
-     "pop qword[rax]\n"^
-     "mov rax, SOB_VOID_ADDRESS\n"
-    | Or'(expr_list) -> generate_or const_tbl fvars expr_list;
+  let get_counter_s = string_of_int (get_counter);;
 
-    and generate_or const_tbl fvars expr_list =
+  (*let rec generate_or const_tbl fvars expr_list =
     let index = string_of_int (get_counter) in
       (match expr_list with
     | [] -> "Lexit"^index^":\n"
     | expr :: [] -> (main_generate const_tbl fvars expr)^ "Lexit"^index^ ":\n"
     | expr :: exprs -> (main_generate const_tbl fvars expr)^ "cmp rax, SOB_FALSE_ADDRESS\n jne Lexit"^index^"\n"^
-    (generate_or const_tbl fvars exprs));;
+    (generate_or const_tbl fvars exprs));;*)
+
+  let rec get_index_of_free_var name fvars = 
+    match fvar with 
+    | [] -> raise X_no_such_var
+    | first :: rest -> 
+      match first with 
+      | (var_name, index) when var_name = name -> (int_of_string index)
+      | _ -> get_index_of_free_var name rest;;
+
+  let rec main_generate const_tbl fvars expr' = 
+  match expr' with
+  | Const'(Sexpr(sexp)) -> "mov rax, const_tbl+"^string_of_int (get_index_from_table const_tbl sexp)^"\n"
+  | Const'(Void) -> "mov rax, const_tbl+0\n"
+  | Box'(var) -> (main_generate const_tbl fvars (Var'(var)))^
+    "push rax\n
+      MALLOC rax, 8\n
+      pop qword [rax]\n"
+  | BoxGet'(var) -> (main_generate const_tbl fvars (Var'(var)))^
+    "mov rax, qword[rax]\n" 
+  | BoxSet'(var, expr) -> (main_generate const_tbl fvars expr)^
+    "push rax\n"^
+    (main_generate const_tbl fvars (Var'(var)))^
+    "pop qword[rax]\n"^
+    "mov rax, SOB_VOID_ADDRESS\n"
+  (*| Or'(expr_list) -> generate_or const_tbl fvars expr_list*)
+  | If'(test, dit, dif) -> 
+    let else_label = "Lelse"^ get_counter_s 
+    and exit_label = "Lexit" ^ get_counter_s in
+      (main_generate const_tbl fvars test) ^ "\n" ^
+      "cmp rax, SOB_FALSE_ADDRESS\n" ^
+      "je " ^ else_label ^ "\n" ^
+      (main_generate const_tbl fvars dit) ^ "\n" ^
+      "jmp " ^ exit_label ^ "\n" ^
+      else_label ^ ":" ^ (main_generate const_tbl fvars dif) ^ "\n" ^
+      exit_label
+  | Seq'(expr'_list) -> String.concat "\n" (List.map (main_generate const_tbl fvars) expr'_list)
+  | Def'(name, value) -> 
+    (main_generate const_tbl fvars value) ^ "\n" ^
+    "mov [fvar_tbl + " ^ (get_index_of_free_var name) ^ " * 8], rax\n" ^
+    "mov rax, SOB_VOID_ADDRESS"
+  | Set'(name, value) -> 
+    (main_generate const_tbl fvars value) ^ "\n" ^
+    "mov [fvar_tbl + " ^ (get_index_of_free_var name) ^ " * 8], rax\n" ^
+    "mov rax, SOB_VOID_ADDRESS"
+  | _ -> raise X_not_yet_implemented;;
 
   let make_consts_tbl asts = get_const_tables asts;; 
   let make_fvars_tbl asts = get_fvar_table asts;;
-  let generate consts fvars e = raise X_not_yet_implemented;;
+  let generate consts fvars e = main_generate consts fvars e;;
 end;;
 
+let gen e = Code_Gen.generate (Code_Gen.make_consts_tbl [e]) (Code_Gen.make_fvars_tbl [e]) e;;

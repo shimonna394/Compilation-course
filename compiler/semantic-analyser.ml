@@ -69,240 +69,247 @@ module type SEMANTICS = sig
 end;;
 
 module Semantics : SEMANTICS = struct
-
-let rec get_list_of_args_list count depth args =
-  match args with 
-  | [] -> []
-  | hd :: tl -> [hd; string_of_int count; string_of_int depth] :: (get_list_of_args_list (count + 1) depth tl)
-
-let check_stack_and_return_var stack depth str = 
-  match (List.filter (fun(pair) -> String.equal (List.hd pair) str) stack) with
-  | [] -> VarFree(str)
-  | [s; i; d] :: rest -> 
-    let d = int_of_string d 
-    and i = int_of_string i in
-    if(d + 1 == depth) then VarParam(str, i) else VarBound(str, depth - d - 2, i)
-  | _ -> raise X_syntax_error;;
-    
-let rec dem_lex_env stack depth expr = 
-  match (expr) with 
-  | Const(expr) -> Const'(expr)
-  | If(test, dit, dif) -> If'(dem_lex_env stack depth test, dem_lex_env stack depth dit, dem_lex_env stack depth dif)
-  | Or(exprs) -> Or'(List.map (dem_lex_env stack depth) exprs)
-  | Seq(exprs) -> Seq'(List.map (dem_lex_env stack depth) exprs)  
-  | LambdaSimple(args, body) -> 
-    let new_stack = get_list_of_args_list 0 depth args in    
-    LambdaSimple'(args, dem_lex_env (new_stack @ stack) (depth + 1) body)
-  | LambdaOpt(args, opt, body) -> 
-    let new_stack = get_list_of_args_list 0 depth (args @ [opt]) in    
-    LambdaOpt'(args, opt, dem_lex_env (new_stack @ stack) (depth + 1) body)
-  | Var(str) -> Var'(check_stack_and_return_var stack depth str)      
-  | Set(Var(str), value) -> Set'(check_stack_and_return_var stack depth str, dem_lex_env stack depth value)
-  | Def(Var(str), value) -> Def'(check_stack_and_return_var stack depth str, dem_lex_env stack depth value)
-  | Applic(expr, exprs) -> Applic'(dem_lex_env stack depth expr, List.map (dem_lex_env stack depth) exprs)
-  | _ -> raise X_not_yet_implemented;;
-
-  let rec demonstrate_tail_calls in_tail_p expr =  
+  let rec get_list_of_args_list count depth args =
+    match args with 
+    | [] -> []
+    | hd :: tl -> [hd; string_of_int count; string_of_int depth] :: (get_list_of_args_list (count + 1) depth tl)
+  
+  let check_stack_and_return_var stack depth str = 
+    match (List.filter (fun(pair) -> String.equal (List.hd pair) str) stack) with
+    | [] -> VarFree(str)
+    | [s; i; d] :: rest -> 
+      let d = int_of_string d 
+      and i = int_of_string i in
+      if(d + 1 == depth) then VarParam(str, i) else VarBound(str, depth - d - 2, i)
+    | _ -> raise X_syntax_error;;
+      
+  let rec dem_lex_env stack depth expr = 
+    match (expr) with 
+    | Const(expr) -> Const'(expr)
+    | If(test, dit, dif) -> If'(dem_lex_env stack depth test, dem_lex_env stack depth dit, dem_lex_env stack depth dif)
+    | Or(exprs) -> Or'(List.map (dem_lex_env stack depth) exprs)
+    | Seq(exprs) -> Seq'(List.map (dem_lex_env stack depth) exprs)  
+    | LambdaSimple(args, body) -> 
+      let new_stack = get_list_of_args_list 0 depth args in    
+      LambdaSimple'(args, dem_lex_env (new_stack @ stack) (depth + 1) body)
+    | LambdaOpt(args, opt, body) -> 
+      let new_stack = get_list_of_args_list 0 depth (args @ [opt]) in    
+      LambdaOpt'(args, opt, dem_lex_env (new_stack @ stack) (depth + 1) body)
+    | Var(str) -> Var'(check_stack_and_return_var stack depth str)      
+    | Set(Var(str), value) -> Set'(check_stack_and_return_var stack depth str, dem_lex_env stack depth value)
+    | Def(Var(str), value) -> Def'(check_stack_and_return_var stack depth str, dem_lex_env stack depth value)
+    | Applic(expr, exprs) -> Applic'(dem_lex_env stack depth expr, List.map (dem_lex_env stack depth) exprs)
+    | _ -> raise X_not_yet_implemented;;
+  
+    let rec demonstrate_tail_calls in_tail_p expr =  
+      match expr with
+     | Const'(expr) -> Const'(expr)
+     | Var'(expr) -> Var'(expr)
+     | Box'(expr) -> Box'(expr)
+     | BoxGet'(expr) -> BoxGet'(expr)
+     | BoxSet'(var,exp) -> BoxSet'(var, (demonstrate_tail_calls in_tail_p exp))
+     | If'(test,then_expr,else_expr) -> If'((demonstrate_tail_calls false test),
+       (demonstrate_tail_calls in_tail_p then_expr),
+       (demonstrate_tail_calls in_tail_p else_expr))
+     | Seq'(expr_list) -> Seq'(last_in_tail expr_list)
+     | Def'(var,exp) -> Def'(var, (demonstrate_tail_calls false exp)) 
+     | Set'(var,exp) -> Set'(var, (demonstrate_tail_calls false exp)) 
+     | Or'(expr_list) -> Or'(last_in_tail expr_list)
+     | LambdaSimple'(args,body) -> LambdaSimple'(args,(demonstrate_tail_calls true body))
+     | LambdaOpt'(args,opt,body) -> LambdaOpt'(args,opt,(demonstrate_tail_calls true body))
+     | Applic'(proc,args) -> (match in_tail_p with
+       | true -> ApplicTP'((demonstrate_tail_calls false proc), (List.map (demonstrate_tail_calls false) args))
+       | false -> Applic'((demonstrate_tail_calls false proc), (List.map (demonstrate_tail_calls false) args)))
+     | ApplicTP'(proc,args) -> ApplicTP'((demonstrate_tail_calls false proc), (List.map (demonstrate_tail_calls false) args));
+     
+    and last_in_tail expr_list = 
+      let reverse_list = (List.rev expr_list) in
+      let last_expr = (List.hd reverse_list) in
+      let rest_expr_list = (List.rev (List.tl reverse_list)) in
+      (List.append (List.map (demonstrate_tail_calls false) rest_expr_list) [demonstrate_tail_calls true last_expr]);;
+  
+      (* box var to BoxGet and set to SetBox *)
+    let rec add_boxing_param param body = 
+        (match body with
+           | Const'(expr) -> Const'(expr)
+           | Var'(var) -> (match var with
+                            | VarParam(name, _) when name = param -> BoxGet'(var)
+                            | VarBound(name, _, _) when name = param -> BoxGet'(var)
+                            | _ -> Var'(var))
+           | Box'(var) -> Box'(var)
+           | BoxGet'(var) -> BoxGet'(var)
+           | BoxSet'(var, expr) -> BoxSet'(var, (add_boxing_param param expr))
+           | If'(test, then_expr, else_expr) -> If'((add_boxing_param param test), (add_boxing_param param then_expr), (add_boxing_param param else_expr))
+           | Seq'(expr_list) -> Seq'(List.map (add_boxing_param param) expr_list)
+           | Set'(var_name, val_name) -> (match var_name with
+                                        | VarParam(name, minor) when name = param -> BoxSet'(VarParam(name, minor), (add_boxing_param param val_name))
+                                        | VarBound(name, major, minor) when name = param -> BoxSet'(VarBound(name, major, minor), (add_boxing_param param val_name))
+                                        | _ -> Set'(var_name, (add_boxing_param param val_name)))
+           | Def'(var_name, val_name) -> Def'(var_name, (add_boxing_param param val_name))
+           | Or'(expr_list) -> Or'(List.map (add_boxing_param param) expr_list)
+           | LambdaSimple'(args, body) -> (if (List.mem param args)
+                                             then LambdaSimple'(args, body)
+                                             else LambdaSimple'(args, (add_boxing_param param body)))
+           | LambdaOpt'(args, opt, body) -> (if (List.mem param (List.append args [opt]))
+                                             then LambdaOpt'(args, opt, body)
+                                             else LambdaOpt'(args, opt, (add_boxing_param param body)))
+           | Applic'(proc, args) -> Applic'((add_boxing_param param proc), (List.map (add_boxing_param param) args))
+           | ApplicTP'(proc, args) -> ApplicTP'((add_boxing_param param proc), (List.map (add_boxing_param param) args)));
+        
+    and add_boxing  param body index = 
+      (add_boxing_param param body);;
+  
+    let rec check_body_of_lambda_w param write_occurs body =
+        match body with 
+        | Var'(VarBound(var_name, _, _)) when var_name = param -> write_occurs
+        | Var'(VarParam(var_name, _)) when var_name = param -> write_occurs
+        | Seq'(exprs) -> (List.fold_right (&&) (List.map (check_body_of_lambda_w param write_occurs) exprs) true)
+        | _ -> true;;
+      
+    let rec check_body_of_lambda_r param read_occurs body =
+        match body with 
+        | Set'(VarBound(var_name,_, _), _) when var_name = param -> read_occurs
+        | Set'(VarParam(var_name, _), _) when var_name = param -> read_occurs
+        | Seq'(exprs) -> (List.fold_right (&&) (List.map (check_body_of_lambda_r param read_occurs) exprs) true)
+        | _ -> true;;
+      
+    let rec check_cond param write_occurs read_occurs expr =
+        match expr with 
+        | Seq'(seq_exprs) ->
+          (match seq_exprs with 
+          | [] -> true
+          | car :: cdr -> 
+          (match car with   
+          | Var'(VarBound(var_name, _, _)) when var_name = param -> (List.fold_right (&&) (List.map (check_cond param write_occurs true) cdr) true)
+          | Var'(VarParam(var_name, _)) when var_name = param -> (List.fold_right (&&) (List.map (check_cond param write_occurs true) cdr) true)
+          | Set'(VarBound(var_name,_, _), _) when var_name = param -> (List.fold_right (&&) (List.map (check_cond param true read_occurs) cdr) true)
+          | Set'(VarParam(var_name, _), _) when var_name = param -> (List.fold_right (&&) (List.map (check_cond param true read_occurs) cdr) true)
+          | LambdaSimple'(args, body_expr) -> (check_body_of_lambda_w param write_occurs body_expr) && (check_body_of_lambda_r param read_occurs body_expr)
+          | LambdaOpt'(args, opt, body_expr) -> (check_body_of_lambda_w param write_occurs body_expr) && (check_body_of_lambda_r param read_occurs body_expr)
+          | _->true))
+         | _ -> true;;
+  
+      (* the main function of boxing *)
+  let rec dem_boxing expr = 
     match expr with
-   | Const'(expr) -> Const'(expr)
-   | Var'(expr) -> Var'(expr)
-   | Box'(expr) -> Box'(expr)
-   | BoxGet'(expr) -> BoxGet'(expr)
-   | BoxSet'(var,exp) -> BoxSet'(var, (demonstrate_tail_calls in_tail_p exp))
-   | If'(test,then_expr,else_expr) -> If'((demonstrate_tail_calls false test),
-     (demonstrate_tail_calls in_tail_p then_expr),
-     (demonstrate_tail_calls in_tail_p else_expr))
-   | Seq'(expr_list) -> Seq'(last_in_tail expr_list)
-   | Def'(var,exp) -> Def'(var, (demonstrate_tail_calls false exp)) 
-   | Set'(var,exp) -> Set'(var, (demonstrate_tail_calls false exp)) 
-   | Or'(expr_list) -> Or'(last_in_tail expr_list)
-   | LambdaSimple'(args,body) -> LambdaSimple'(args,(demonstrate_tail_calls true body))
-   | LambdaOpt'(args,opt,body) -> LambdaOpt'(args,opt,(demonstrate_tail_calls true body))
-   | Applic'(proc,args) -> (if in_tail_p
-     then ApplicTP'((demonstrate_tail_calls false proc), (List.map (demonstrate_tail_calls false) args))
-     else Applic'((demonstrate_tail_calls false proc), (List.map (demonstrate_tail_calls false) args)))
-   | ApplicTP'(proc,args) -> ApplicTP'((demonstrate_tail_calls false proc), (List.map (demonstrate_tail_calls false) args));
-   
-  and last_in_tail expr_list = 
-    let reverse_list = (List.rev expr_list) in
-    let last_expr = (List.hd reverse_list) in
-    let rest_expr_list = (List.rev (List.tl reverse_list)) in
-    (List.append (List.map (demonstrate_tail_calls false) rest_expr_list) [demonstrate_tail_calls true last_expr]);;
-
-    (* box var to BoxGet and set to SetBox *)
-  let rec add_boxing_param param body = 
-      (match body with
+     | Const'(expr) -> Const'(expr)
+     | Var'(expr) -> Var'(expr)
+     | Box'(expr) -> Box'(expr)
+     | BoxGet'(expr) -> BoxGet'(expr)
+     | BoxSet'(var,exp) -> BoxSet'(var, (dem_boxing exp))
+     | If'(test,then_expr,else_expr) -> If'((dem_boxing test),
+       (dem_boxing then_expr),
+       (dem_boxing else_expr))
+     | Seq'(expr_list) -> Seq'(List.map dem_boxing expr_list)
+     | Def'(var,exp) -> Def'(var, (dem_boxing exp)) 
+     | Set'(var,exp) -> Set'(var, (dem_boxing exp)) 
+     | Or'(expr_list) -> Or'(List.map dem_boxing expr_list)
+     | LambdaSimple'(args,body) -> LambdaSimple'(args, (dem_boxing(handle_box_lambda (List.rev args) body ((List.length args)-1))))
+     | LambdaOpt'(args,opt,body) -> LambdaOpt'(args, opt, (dem_boxing(handle_box_lambda (List.rev(List.append args [opt])) body ((List.length args)))))
+     | Applic'(proc,args) -> Applic'((dem_boxing proc), (List.map dem_boxing args))
+     | ApplicTP'(proc,args) -> ApplicTP'((dem_boxing proc), (List.map dem_boxing args));
+  
+     (* handle lambda case - check we need boxing, if yes box the expr*)
+  and handle_box_lambda args body index =
+   match args with
+     | car :: cdr -> (if ((check_boxing car body) && (check_cond car false false body))
+     then (let boxed_body1 = (add_boxing car body index) in
+      let boxed_body = (match boxed_body1 with
+         | Seq'(Set'((VarParam(var_name1, minor1)), Box'(VarParam(var_name2, minor2))) :: expr_list) when (var_name1 = var_name2) ->
+           (Seq'(List.append [Set'(VarParam(car, index), Box'(VarParam(car, index)));
+                             Set'(VarParam(var_name1, minor1), Box'(VarParam(var_name2, minor2)))] expr_list)) 
+         | Seq'(expr_list) -> (Seq'(List.append [Set'(VarParam(car, index), Box'(VarParam(car, index)))] expr_list))
+         | _ -> Seq'(List.append [Set'(VarParam(car, index), Box'(VarParam(car, index)))] [boxed_body1])) in 
+     (handle_box_lambda cdr boxed_body  (index-1)))
+     else (handle_box_lambda cdr body (index-1)))
+     | [] -> body;
+  
+     (* check if the parameter in the expr should be boxed *)
+  and check_boxing param expr = 
+      let read_occurs = ref [] in
+      let write_occurs = ref [] in
+      let ribs = ref 0 in
+      let add_ribs num = 
+        ribs := !ribs + 1 in
+      let add_to_r num = 
+       (if (not (List.mem num !read_occurs))
+       then read_occurs := List.append !read_occurs [num]) in
+      let add_to_w num = 
+       (if (not (List.mem num !write_occurs))
+       then write_occurs := List.append !write_occurs [num]) in
+     
+     let take_second e expr = 
+       expr in  
+     
+     let rec check_params param num expr = 
+       (match expr with
          | Const'(expr) -> Const'(expr)
          | Var'(var) -> (match var with
-                          | VarParam(name, _) when name = param -> BoxGet'(var)
-                          | VarBound(name, _, _) when name = param -> BoxGet'(var)
-                          | _ -> Var'(var))
+                         | VarBound(var_name, major, minor) when var_name = param -> (let add_reads = add_to_r num in
+                                                                             take_second add_reads (Var'(var)))
+                         | VarParam(var_name, index) when var_name = param -> (let add_reads = add_to_r num in
+                                                                             take_second add_reads (Var'(var)))
+                         | _ -> Var'(var))
          | Box'(var) -> Box'(var)
          | BoxGet'(var) -> BoxGet'(var)
-         | BoxSet'(var, expr) -> BoxSet'(var, (add_boxing_param param expr))
-         | If'(test, then_expr, else_expr) -> If'((add_boxing_param param test), (add_boxing_param param then_expr), (add_boxing_param param else_expr))
-         | Seq'(expr_list) -> Seq'(List.map (add_boxing_param param) expr_list)
+         | BoxSet'(var, expr) -> BoxSet'(var, (check_params param num expr))
+         | If'(test, then_expr, else_expr) -> If'((check_params param num test), (check_params param num then_expr), (check_params param num else_expr))
+         | Seq'(expr_list) -> Seq'(List.map (check_params param num) expr_list)
          | Set'(var_name, val_name) -> (match var_name with
-                                      | VarParam(name, minor) when name = param -> BoxSet'(VarParam(name, minor), (add_boxing_param param val_name))
-                                      | VarBound(name, major, minor) when name = param -> BoxSet'(VarBound(name, major, minor), (add_boxing_param param val_name))
-                                      | _ -> Set'(var_name, (add_boxing_param param val_name)))
-         | Def'(var_name, val_name) -> Def'(var_name, (add_boxing_param param val_name))
-         | Or'(expr_list) -> Or'(List.map (add_boxing_param param) expr_list)
+                                     | VarBound(name, major, minor) when name = param -> (let add_writes = add_to_w num in
+                                                                                               take_second add_writes (Set'(var_name, (check_params param num val_name))))
+                                     | _ -> Set'(var_name, (check_params param num val_name)))
+         | Def'(var_name, val_name) -> Def'(var_name, (check_params param num val_name))
+         | Or'(expr_list) -> Or'(List.map (check_params param num) expr_list)
          | LambdaSimple'(args, body) -> (if (List.mem param args)
                                            then LambdaSimple'(args, body)
-                                           else LambdaSimple'(args, (add_boxing_param param body)))
+                                           else LambdaSimple'(args, (check_params param num body)))
          | LambdaOpt'(args, opt, body) -> (if (List.mem param (List.append args [opt]))
-                                           then LambdaOpt'(args, opt, body)
-                                           else LambdaOpt'(args, opt, (add_boxing_param param body)))
-         | Applic'(proc, args) -> Applic'((add_boxing_param param proc), (List.map (add_boxing_param param) args))
-         | ApplicTP'(proc, args) -> ApplicTP'((add_boxing_param param proc), (List.map (add_boxing_param param) args)));
-      
-  and add_boxing  param body index = 
-    (add_boxing_param param body);;
-
-    (* the main function of boxing *)
-let rec dem_boxing expr = 
-  match expr with
-   | Const'(expr) -> Const'(expr)
-   | Var'(expr) -> Var'(expr)
-   | Box'(expr) -> Box'(expr)
-   | BoxGet'(expr) -> BoxGet'(expr)
-   | BoxSet'(var,exp) -> BoxSet'(var, (dem_boxing exp))
-   | If'(test,then_expr,else_expr) -> If'((dem_boxing test),
-     (dem_boxing then_expr),
-     (dem_boxing else_expr))
-   | Seq'(expr_list) -> Seq'(List.map dem_boxing expr_list)
-   | Def'(var,exp) -> Def'(var, (dem_boxing exp)) 
-   | Set'(var,exp) -> Set'(var, (dem_boxing exp)) 
-   | Or'(expr_list) -> Or'(List.map dem_boxing expr_list)
-   | LambdaSimple'(args,body) -> LambdaSimple'(args, (dem_boxing(handle_box_lambda (List.rev args) body ((List.length args)-1))))
-   | LambdaOpt'(args,opt,body) -> LambdaOpt'(args, opt, (dem_boxing(handle_box_lambda (List.rev(List.append args [opt])) body ((List.length args)))))
-   | Applic'(proc,args) -> Applic'((dem_boxing proc), (List.map dem_boxing args))
-   | ApplicTP'(proc,args) -> ApplicTP'((dem_boxing proc), (List.map dem_boxing args));
-
-  and check_cond param write_occur read_occur expr =
-    match expr with 
-     | Seq'(expr_list) -> 
-       (match expr_list with
-       | car :: [] -> not(write_occur && read_occur)
-       | car :: cdr -> 
-         (match car with 
-         | Set'(var_exp, val_name) when param = 
-            (match var_exp with 
-            | VarBound(var_name, _, _) -> var_name 
-            | VarParam(var_name, _) -> var_name) -> 
-           ((check_cond param true read_occur val_name) 
-             && (List.fold_left (&&) true (List.map (check_cond param true read_occur) cdr)))
-         | Var'(var_expr) -> 
-            (match var_expr with 
-            | VarBound(var_name, minor, major) when var_name = param -> 
-            (List.fold_left (&&) true (List.map (check_cond param write_occur true) cdr))         
-            | VarParam(var_name, minor) when var_name = param -> 
-            (List.fold_left (&&) true (List.map (check_cond param write_occur true) cdr))
-            | _ -> (List.fold_left (&&) true (List.map (check_cond param write_occur read_occur) cdr)))
-         | _ -> true))
-     |_ -> true;
+                                                   then LambdaOpt'(args, opt, body)
+                                                   else LambdaOpt'(args, opt, (check_params param num body)))
+         | Applic'(proc, args) -> Applic'((check_params param num proc), (List.map (check_params param num) args))
+         | ApplicTP'(proc, args) -> ApplicTP'((check_params param num proc), (List.map (check_params param num) args))) in
+         
+     let new_rib expr' = 
+       let next_num = 0 in
+       let num1 = add_ribs next_num in 
+       take_second num1 (check_params param !ribs expr') in
      
-   (* handle lambda case - check we need boxing, if yes box the expr*)
-and handle_box_lambda args body index =
- match args with
-   | car :: cdr -> (if ((check_boxing car body) && (check_cond car false false body))
-   then (let boxed_body1 = (add_boxing car body index) in
-    let boxed_body = (match boxed_body1 with
-       | Seq'(Set'((VarParam(name1, index1)), Box'(VarParam(name2, index2))) :: expr_list) when (name1 = name2) ->
-         (Seq'(List.append [Set'(VarParam(car, index), Box'(VarParam(car, index)));
-                           Set'(VarParam(name1, index1), Box'(VarParam(name2, index2)))] expr_list)) 
-       | Seq'(expr_list) -> (Seq'(List.append [Set'(VarParam(car, index), Box'(VarParam(car, index)))] expr_list))
-       | _ -> Seq'(List.append [Set'(VarParam(car, index), Box'(VarParam(car, index)))] [boxed_body1])) in 
-   (handle_box_lambda cdr boxed_body  (index-1)))
-   else (handle_box_lambda cdr body (index-1)))
-   | [] -> body;
-
-   (* check if the parameter in the expr should be boxed *)
-and check_boxing param expr = 
-    let read_occurs = ref [] in
-    let write_occurs = ref [] in
-    let ribs = ref 0 in
-    let add_ribs num = 
-      ribs := !ribs+1 in
-    let add_to_reads num = 
-     (if (not (List.mem num !read_occurs))
-     then read_occurs := List.append !read_occurs [num]) in
-    let add_to_writes num = 
-     (if (not (List.mem num !write_occurs))
-     then write_occurs := List.append !write_occurs [num]) in
+     let start_rib = 0 in
+     
+     let rec main_check_box body = 
+       (match body with
+         | Const'(expr) -> Const'(expr)
+         | Var'(var) -> check_params param start_rib (Var'(var))
+         | Box'(var) -> Box'(var)
+         | BoxGet'(var) -> BoxGet'(var)
+         | BoxSet'(var, expr) -> BoxSet'(var, (main_check_box expr))
+         | If'(test, then_expr, else_expr) -> If'((main_check_box test), (main_check_box then_expr), (main_check_box else_expr))
+         | Seq'(expr_list) -> Seq'(List.map main_check_box expr_list)
+         | Set'(var_name,val_name) -> (match var_name with
+                                     | VarParam(name, _) when name = param -> (let add_writes = add_to_w start_rib in
+                                                                                     take_second add_writes (Set'((var_name), (main_check_box val_name))))
+                                     | _ -> Set'(var_name, (main_check_box val_name)))
+         | Def'(var_name,val_name) -> Def'(var_name, (main_check_box val_name))
+         | Or'(expr_list) -> Or'(List.map main_check_box expr_list)
+         | LambdaSimple'(args, body) -> new_rib (LambdaSimple'(args, body))
+         | LambdaOpt'(args, opt, body) -> new_rib (LambdaOpt'(args, opt, body))
+         | Applic'(proc, args) -> Applic'((main_check_box proc), (List.map main_check_box args))
+         | ApplicTP'(proc, args) -> ApplicTP'((main_check_box proc), (List.map main_check_box args))) in
+     
+       let new_box = main_check_box expr in 
+       let check_ribs num =
+       let diff_ribs = List.filter (fun number -> number != num) !write_occurs in
+       ((List.length diff_ribs) > 0) in
+       let lst_box = List.map (check_ribs) !read_occurs in
+       take_second new_box (List.fold_right (fun x y -> x || y) lst_box false);;
+  
+  
+  let annotate_lexical_addresses e = dem_lex_env [] 0 e;; 
    
-   let take_second e expr = 
-     expr in  
+  let annotate_tail_calls e = demonstrate_tail_calls false e;;
    
-   let rec check_params param num expr = 
-     (match expr with
-       | Const'(expr) -> Const'(expr)
-       | Var'(var) -> (match var with
-                       | VarBound(name, major, minor) when name = param -> (let add_reads = add_to_reads num in
-                                                                           take_second add_reads (Var'(var)))
-                       | VarParam(name, index) when name = param -> (let add_reads = add_to_reads num in
-                                                                           take_second add_reads (Var'(var)))
-                       | _ -> Var'(var))
-       | Box'(var) -> Box'(var)
-       | BoxGet'(var) -> BoxGet'(var)
-       | BoxSet'(var, expr) -> BoxSet'(var, (check_params param num expr))
-       | If'(test, then_expr, else_expr) -> If'((check_params param num test), (check_params param num then_expr), (check_params param num else_expr))
-       | Seq'(expr_list) -> Seq'(List.map (check_params param num) expr_list)
-       | Set'(var_name, val_name) -> (match var_name with
-                                   | VarBound(name, major, minor) when name = param -> (let add_writes = add_to_writes num in
-                                                                                             take_second add_writes (Set'(var_name, (check_params param num val_name))))
-                                   | _ -> Set'(var_name, (check_params param num val_name)))
-       | Def'(var_name, val_name) -> Def'(var_name, (check_params param num val_name))
-       | Or'(expr_list) -> Or'(List.map (check_params param num) expr_list)
-       | LambdaSimple'(args, body) -> (if (List.mem param args)
-                                         then LambdaSimple'(args, body)
-                                         else LambdaSimple'(args, (check_params param num body)))
-       | LambdaOpt'(args, opt, body) -> (if (List.mem param (List.append args [opt]))
-                                                 then LambdaOpt'(args, opt, body)
-                                                 else LambdaOpt'(args, opt, (check_params param num body)))
-       | Applic'(proc, args) -> Applic'((check_params param num proc), (List.map (check_params param num) args))
-       | ApplicTP'(proc, args) -> ApplicTP'((check_params param num proc), (List.map (check_params param num) args))) in
-       
-   let new_rib expr' = 
-     let next_num = 0 in
-     let num1 = add_ribs next_num in 
-     check_params param !ribs expr' in
-   
-   let start_rib = 0 in
-   
-   let rec main_check_box body = 
-     (match body with
-       | Const'(expr) -> Const'(expr)
-       | Var'(var) -> check_params param start_rib (Var'(var))
-       | Box'(var) -> Box'(var)
-       | BoxGet'(var) -> BoxGet'(var)
-       | BoxSet'(var, expr) -> BoxSet'(var, (main_check_box expr))
-       | If'(test, then_expr, else_expr) -> If'((main_check_box test), (main_check_box then_expr), (main_check_box else_expr))
-       | Seq'(expr_list) -> Seq'(List.map main_check_box expr_list)
-       | Set'(var_name,val_name) -> (match var_name with
-                                   | VarParam(name, _) when name = param -> (let add_writes = add_to_writes start_rib in
-                                                                                   (Set'((var_name), (main_check_box val_name))))
-                                   | _ -> Set'(var_name, (main_check_box val_name)))
-       | Def'(var_name,val_name) -> Def'(var_name, (main_check_box val_name))
-       | Or'(expr_list) -> Or'(List.map main_check_box expr_list)
-       | LambdaSimple'(args, body) -> new_rib (LambdaSimple'(args, body))
-       | LambdaOpt'(args, opt, body) -> new_rib (LambdaOpt'(args, opt, body))
-       | Applic'(proc, args) -> Applic'((main_check_box proc), (List.map main_check_box args))
-       | ApplicTP'(proc, args) -> ApplicTP'((main_check_box proc), (List.map main_check_box args))) in
-   
-     let new_box = main_check_box expr in 
-     let check_writes num =
-     let remaining = List.filter (fun number -> number != num) !write_occurs in
-     ((List.length remaining) > 0) in
-     let lst = List.map (check_writes) !read_occurs in
-     List.fold_right (fun a b -> a || b) lst false;;
-
-let annotate_lexical_addresses e = dem_lex_env [] 0 e;; 
-
-let annotate_tail_calls e = demonstrate_tail_calls false e;;
-
-let box_set e = dem_boxing e;;
+  let box_set e = dem_boxing e;;
 
 let run_semantics expr =
   box_set
