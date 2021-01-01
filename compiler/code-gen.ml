@@ -194,6 +194,14 @@ let rec get_sexp_list expr' =
 
   let make_consts_tbl asts = get_const_tables asts;; 
   let make_fvars_tbl asts = get_fvar_table asts;;
+  (* Const' -> Takes from const table Shimi
+     VarFree -> Takes from freeVar Table Sharon
+     If -> Requestive and uses Fuctional fuction Sharon 
+     Or' -> Shimi
+     Box -> Shimi
+     Seq' -> Sharon
+     Set' -> Sharon
+     Def' -> Sharon *)
   let generate consts fvars e = raise X_not_yet_implemented;;
 end;;
 
