@@ -78,7 +78,8 @@ module Code_Gen : CODE_GEN = struct
   
     let rec get_index_from_table const_table sexp = 
       (match const_table with
-      | (Sexpr(sexpr), (offset, representation)) :: cdr when (sexpr_eq sexpr sexp) -> offset
+      | (Sexpr(sexpr), (offset, str)) :: cdr when (sexpr_eq sexpr sexp) -> offset
+      | (Void, (offset, str)) :: cdr -> offset
       | car :: cdr -> get_index_from_table cdr sexp
       | [] -> (-1));;
   
@@ -189,16 +190,42 @@ module Code_Gen : CODE_GEN = struct
 
   let get_fvar_table expr'_list = (get_fvar_table_expended expr'_list []);;
 
+  (* generate *)
+
+  let counter = ref 0;;
+
+  let get_counter = 
+    let ans = !counter in
+    let add_count = counter := !counter+1 in
+    take_second add_count ans;;
+
+   let rec main_generate const_tbl fvars expr' = 
+    match expr' with
+    | Const'(Sexpr(sexp)) -> "mov rax, const_tbl+"^string_of_int (get_index_from_table const_tbl sexp)^"\n"
+    | Const'(Void) -> "mov rax, const_tbl+0\n"
+    | Box'(var) -> (main_generate const_tbl fvars (Var'(var)))^
+      "push rax\n
+       MALLOC rax, 8\n
+       pop qword [rax]\n"
+    | BoxGet'(var) -> (main_generate const_tbl fvars (Var'(var)))^
+     "mov rax, qword[rax]\n" 
+    | BoxSet'(var, expr) -> (main_generate const_tbl fvars expr)^
+     "push rax\n"^
+     (main_generate const_tbl fvars (Var'(var)))^
+     "pop qword[rax]\n"^
+     "mov rax, SOB_VOID_ADDRESS\n"
+    | Or'(expr_list) -> generate_or const_tbl fvars expr_list;
+
+    and generate_or const_tbl fvars expr_list =
+    let index = string_of_int (get_counter) in
+      (match expr_list with
+    | [] -> "Lexit"^index^":\n"
+    | expr :: [] -> (main_generate const_tbl fvars expr)^ "Lexit"^index^ ":\n"
+    | expr :: exprs -> (main_generate const_tbl fvars expr)^ "cmp rax, SOB_FALSE_ADDRESS\n jne Lexit"^index^"\n"^
+    (generate_or const_tbl fvars exprs));;
+
   let make_consts_tbl asts = get_const_tables asts;; 
   let make_fvars_tbl asts = get_fvar_table asts;;
-  (* Const' -> Takes from const table Shimi
-     VarFree -> Takes from freeVar Table Sharon
-     If -> Requestive and uses Fuctional fuction Sharon 
-     Or' -> Shimi
-     Box -> Shimi
-     Seq' -> Sharon
-     Set' -> Sharon
-     Def' -> Sharon *)
   let generate consts fvars e = raise X_not_yet_implemented;;
 end;;
 
