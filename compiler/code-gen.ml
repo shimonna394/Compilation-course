@@ -31,8 +31,27 @@ module type CODE_GEN = sig
   val generate : (constant * (int * string)) list -> (string * int) list -> expr' -> string
 end;;
 
-
 module Code_Gen : CODE_GEN = struct
+
+  let primitive_names_to_labels =
+    [
+      (* Type queries  *)
+      "boolean?", "boolean?"; "flonum?", "flonum?"; "rational?", "rational?";
+      "pair?", "pair?"; "null?", "null?"; "char?", "char?"; "string?", "string?";
+      "procedure?", "procedure?"; "symbol?", "symbol?";
+      (* String procedures *)
+      "string-length", "string_length"; "string-ref", "string_ref"; "string-set!", "string_set";
+      "make-string", "make_string"; "symbol->string", "symbol_to_string";
+      (* Type conversions *)
+      "char->integer", "char_to_integer"; "integer->char", "integer_to_char"; "exact->inexact", "exact_to_inexact";
+      (* Identity test *)
+      "eq?", "eq?";
+      (* Arithmetic ops *)
+      "+", "add"; "*", "mul"; "/", "div"; "=", "eq"; "<", "lt";
+      (* Additional rational numebr ops *)
+      "numerator", "numerator"; "denominator", "denominator"; "gcd", "gcd";
+      (* you can add yours here *)
+    ] 
 
   let empty_func =
     fun x -> ();;
@@ -45,8 +64,8 @@ module Code_Gen : CODE_GEN = struct
   let final_list = ref
     [(Void, (0,"db T_VOID"));
     (Sexpr(Nil),(1,"db T_NIL"));
-    (Sexpr(Bool false),(2,"db T_BOOL(0)"));
-    (Sexpr(Bool true),(4,"db T_BOOL(1)"))];;
+    (Sexpr(Bool false),(2,"db T_BOOL, 0"));
+    (Sexpr(Bool true),(4,"db T_BOOL, 1"))];;
   
     let temp_list = ref [];;
     
@@ -183,13 +202,21 @@ module Code_Gen : CODE_GEN = struct
     | [] -> table
     | expr' :: rest -> 
       (match expr' with 
-      | Def'(VarFree(name), _) -> (get_fvar_table_expended rest (append_if_not_exists name table))
+      | Def'(VarFree(name), _) -> 
+          (get_fvar_table_expended rest (append_if_not_exists name table))
       | Applic'(Var'(VarFree(name)), _) -> (get_fvar_table_expended rest (append_if_not_exists name table))
       | ApplicTP'(Var'(VarFree(name)), _) -> (get_fvar_table_expended rest (append_if_not_exists name table))
       | Seq'(exprs') -> (get_fvar_table_expended exprs' table)
       | _ -> (get_fvar_table_expended rest table));;
 
-  let get_fvar_table expr'_list = (get_fvar_table_expended expr'_list []);;
+  let rec defualt_fvar_table table plt = 
+    match plt with 
+    | [] -> table
+    | first :: rest ->
+      match first with 
+      | (prim, label) -> defualt_fvar_table (table @ [(prim, List.length table)]) rest
+
+  let get_fvar_table expr'_list = (get_fvar_table_expended expr'_list (defualt_fvar_table [] primitive_names_to_labels));;
 
   (* generate *)
 
@@ -211,53 +238,85 @@ module Code_Gen : CODE_GEN = struct
     (generate_or const_tbl fvars exprs));;*)
 
   let rec get_index_of_free_var name fvars = 
-    match fvar with 
-    | [] -> raise X_no_such_var
+    match fvars with 
+    | [] -> raise X_syntax_error
     | first :: rest -> 
       match first with 
-      | (var_name, index) when var_name = name -> (int_of_string index)
+      | (other, index) when (String.equal other name) -> (string_of_int index)
       | _ -> get_index_of_free_var name rest;;
 
-  let rec main_generate const_tbl fvars expr' = 
+  let rec main_generate const_tbl fvars depth expr' = 
   match expr' with
-  | Const'(Sexpr(sexp)) -> "mov rax, const_tbl+"^string_of_int (get_index_from_table const_tbl sexp)^"\n"
-  | Const'(Void) -> "mov rax, const_tbl+0\n"
-  | Box'(var) -> (main_generate const_tbl fvars (Var'(var)))^
+  | Const'(Sexpr(sexp)) -> "mov rax, [const_tbl + "^string_of_int (get_index_from_table const_tbl sexp)^"]\n"
+  | Const'(Void) -> "mov rax, [const_tbl+0\n]"
+  | Box'(var) -> (main_generate const_tbl fvars depth (Var'(var)))^
     "push rax\n
       MALLOC rax, 8\n
       pop qword [rax]\n"
-  | BoxGet'(var) -> (main_generate const_tbl fvars (Var'(var)))^
+  | BoxGet'(var) -> (main_generate const_tbl fvars depth (Var'(var)))^
     "mov rax, qword[rax]\n" 
-  | BoxSet'(var, expr) -> (main_generate const_tbl fvars expr)^
+  | BoxSet'(var, expr) -> (main_generate const_tbl fvars depth expr)^
     "push rax\n"^
-    (main_generate const_tbl fvars (Var'(var)))^
+    (main_generate const_tbl fvars  depth (Var'(var)))^
     "pop qword[rax]\n"^
     "mov rax, SOB_VOID_ADDRESS\n"
   (*| Or'(expr_list) -> generate_or const_tbl fvars expr_list*)
   | If'(test, dit, dif) -> 
     let else_label = "Lelse"^ get_counter_s 
     and exit_label = "Lexit" ^ get_counter_s in
-      (main_generate const_tbl fvars test) ^ "\n" ^
+      (main_generate const_tbl fvars  depth test) ^ "\n" ^
       "cmp rax, SOB_FALSE_ADDRESS\n" ^
       "je " ^ else_label ^ "\n" ^
-      (main_generate const_tbl fvars dit) ^ "\n" ^
+      (main_generate const_tbl fvars depth dit) ^ "\n" ^
       "jmp " ^ exit_label ^ "\n" ^
-      else_label ^ ":" ^ (main_generate const_tbl fvars dif) ^ "\n" ^
+      else_label ^ ":" ^ (main_generate const_tbl fvars  depth dif) ^ "\n" ^
       exit_label
-  | Seq'(expr'_list) -> String.concat "\n" (List.map (main_generate const_tbl fvars) expr'_list)
-  | Def'(name, value) -> 
-    (main_generate const_tbl fvars value) ^ "\n" ^
-    "mov [fvar_tbl + " ^ (get_index_of_free_var name) ^ " * 8], rax\n" ^
+  | Seq'(expr'_list) -> String.concat "\n" (List.map (main_generate const_tbl fvars depth) expr'_list)
+  | Def'(VarFree(name), value) -> 
+    (main_generate const_tbl fvars depth value) ^ "\n" ^
+    "mov [fvar_tbl + " ^ (get_index_of_free_var name fvars) ^ " * 8], rax\n" ^
     "mov rax, SOB_VOID_ADDRESS"
-  | Set'(name, value) -> 
-    (main_generate const_tbl fvars value) ^ "\n" ^
-    "mov [fvar_tbl + " ^ (get_index_of_free_var name) ^ " * 8], rax\n" ^
+  | Set'(VarFree(name), value) -> 
+    (main_generate const_tbl fvars depth value) ^ "\n" ^
+    "mov [fvar_tbl + " ^ (get_index_of_free_var name fvars) ^ " * 8], rax\n" ^
     "mov rax, SOB_VOID_ADDRESS"
+  | Var'(VarFree(name)) -> 
+    "mov [fvar_tbl + " ^ (get_index_of_free_var name fvars) ^ " * 8], rax\n"
+  (*| Set'(VarBound(name, minor, major), value) -> *)
+  (*| Set'(VarParam(name, minor), value) -> *)
+  | LambdaSimple'(args, body) -> 
+  (* Creating a clouse object?*)
+  (* Extending the old env - depth + 1*)  
+  "mov rdi, " ^ string_of_int ((depth + 1) * 8) ^ "\n" ^
+  "call malloc                           ; Get an address for the new env\n              
+  mov [malloc_pointer], rax              ; Save it in malloc_pointer\n
+  mov rax, [rsp + 24]                    ; Copy old env pointer to rax\n
+  push " ^ string_of_int (depth * 8) ^ " ; Copy old env size * 8 bytes for each address size\n
+  push rax                               ; Push Source address (old env)\n
+  push ([malloc_pointer] + 8)            ; Push Destination address (new env) starting at 1 index\n
+  call memcpy                            ; Copy the old env to new\n
+  add rsp, 24                            ; Clean stack from memcpy args\n
+  mov rbx, rax                           ; Save destination pointer (new env)\n
+  mov rdi, [rsp + 32]                    ; Get a vector of size mentioned in stack (arg count)\n
+  call malloc\n
+  mov [malloc_pointer], rax\n
+  push ([rsp + 32] * 8)                  ; Copy args from stack with memcpy of size arg count\n
+  push rsp + 40                          ; Location of args\n
+  push [malloc_pointer]                  ; Destination address for vector 0\n
+  call memcpy\n
+  add rsp, 24                            ; Clean stack from memcpy args\n
+  mov [rbx], rax                         ; Save destination address in location of first vector in new env\n"
+  | Applic'(op, exprs) -> 
+  (* Pushing all values of applic to stack *)
+    (String.concat "\n\n" (List.map (fun expr -> (main_generate const_tbl fvars depth expr) ^ "\npush rax\n") exprs))
+   ^ "\n" ^
+  "push " ^ string_of_int (List.length exprs) ^ "\n"
+  (* Jmp to clouse ?*)
   | _ -> raise X_not_yet_implemented;;
 
   let make_consts_tbl asts = get_const_tables asts;; 
   let make_fvars_tbl asts = get_fvar_table asts;;
-  let generate consts fvars e = main_generate consts fvars e;;
+  let generate consts fvars e = main_generate consts fvars 0 e;;
 end;;
 
-let gen e = Code_Gen.generate (Code_Gen.make_consts_tbl [e]) (Code_Gen.make_fvars_tbl [e]) e;;
+let gen e = String.concat "\n" (List.map (Code_Gen.generate (Code_Gen.make_consts_tbl e) (Code_Gen.make_fvars_tbl e)) e);;

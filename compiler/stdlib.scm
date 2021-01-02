@@ -18,21 +18,17 @@
     (lambda (f . args)
       (map-many f args)))))
 
-
 (define fold-left 
-  #;(Add your implementation here
-     Note: The file won't compile like this, beacuase your tag-parser requires define to have a second expression.
-     This is on purpose, so you don't compile the library without completing this implementation by mistake.))
+  (lambda (func acc lst)
+   (if (null? lst)
+        acc
+        (fold-left func (func acc (car lst)) (cdr lst))))
 
 (define fold-right
-  #;(Add your implementation here
-     Note: The file won't compile like this, beacuase your tag-parser requires define to have a second expression.
-     This is on purpose, so you don't compile the library without completing this implementation by mistake.))
-
-(define cons*
-  #;(Add your implementation here
-     Note: The file won't compile like this, beacuase your tag-parser requires define to have a second expression.
-     This is on purpose, so you don't compile the library without completing this implementation by mistake.))
+ (lambda (func end lst)
+   (if (null? lst)
+      end
+      (func (car lst) (fold-right func end (cdr lst)))))
 
 (define append
   (let ((null? null?)

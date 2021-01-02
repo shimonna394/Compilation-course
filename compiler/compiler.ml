@@ -131,7 +131,7 @@ try
   let infile = Sys.argv.(1) in  
 
   (* load the input file and stdlib *)
-  let code =  (file_to_string "stdlib.scm") ^ (file_to_string infile) in
+  let code =  (*(file_to_string "stdlib.scm") ^*) (file_to_string infile) in
 
   (* generate asts for all the code *)
   let asts = string_to_asts code in
@@ -146,7 +146,7 @@ try
   let generate = Code_Gen.generate consts_tbl fvars_tbl in 
   let code_fragment = String.concat "\n\n"
                         (List.map
-                           (fun ast -> (generate ast) ^ "\n\tcall write_sob_if_not_void")
+                           (fun ast -> (generate ast) ^ "\ncall write_sob_if_not_void")
                            asts) in
 
   (* merge everything into a single large string and print it out *)
