@@ -99,7 +99,6 @@ module Code_Gen : CODE_GEN = struct
     let rec get_index_from_table const_table sexp = 
       (match const_table with
       | (Sexpr(sexpr), (offset, str)) :: cdr when (sexpr_eq sexpr sexp) -> offset
-      | (Void, (offset, str)) :: cdr -> offset
       | car :: cdr -> get_index_from_table cdr sexp
       | [] -> (-1));;
   
@@ -177,8 +176,8 @@ module Code_Gen : CODE_GEN = struct
       let ans = List.append !final_list [] in
       let clean = final_list := [(Void, (0,"db T_VOID"));
       (Sexpr(Nil),(1,"db T_NIL"));
-      (Sexpr(Bool false),(2,"db T_BOOL(0)"));
-      (Sexpr(Bool true),(4,"db T_BOOL(1)"))] in
+      (Sexpr(Bool false),(2,"db T_BOOL, 0"));
+      (Sexpr(Bool true),(4,"db T_BOOL, 1"))] in
       let clean2 = sexp_list := [] in
       let clean3 = temp_list := [] in
       let clean4 = offset := 6 in
@@ -229,14 +228,6 @@ module Code_Gen : CODE_GEN = struct
 
   let get_counter_s = string_of_int (get_counter);;
 
-  (*let rec generate_or const_tbl fvars expr_list =
-    let index = string_of_int (get_counter) in
-      (match expr_list with
-    | [] -> "Lexit"^index^":\n"
-    | expr :: [] -> (main_generate const_tbl fvars expr)^ "Lexit"^index^ ":\n"
-    | expr :: exprs -> (main_generate const_tbl fvars expr)^ "cmp rax, SOB_FALSE_ADDRESS\n jne Lexit"^index^"\n"^
-    (generate_or const_tbl fvars exprs));;*)
-
   let rec get_index_of_free_var name fvars = 
     match fvars with 
     | [] -> raise X_syntax_error
@@ -247,8 +238,8 @@ module Code_Gen : CODE_GEN = struct
 
   let rec main_generate const_tbl fvars depth expr' = 
   match expr' with
-  | Const'(Sexpr(sexp)) -> "mov rax, [const_tbl + "^string_of_int (get_index_from_table const_tbl sexp)^"]\n"
-  | Const'(Void) -> "mov rax, [const_tbl+0\n]"
+  | Const'(Sexpr(sexp)) -> "mov rax, const_tbl + "^string_of_int (get_index_from_table const_tbl sexp)^"\n"
+  | Const'(Void) -> "mov rax, const_tbl + 0\n"
   | Box'(var) -> (main_generate const_tbl fvars depth (Var'(var)))^
     "push rax\n
       MALLOC rax, 8\n
@@ -260,7 +251,7 @@ module Code_Gen : CODE_GEN = struct
     (main_generate const_tbl fvars  depth (Var'(var)))^
     "pop qword[rax]\n"^
     "mov rax, SOB_VOID_ADDRESS\n"
-  (*| Or'(expr_list) -> generate_or const_tbl fvars expr_list*)
+  | Or'(expr_list) -> generate_or const_tbl fvars depth expr_list
   | If'(test, dit, dif) -> 
     let else_label = "Lelse"^ get_counter_s 
     and exit_label = "Lexit" ^ get_counter_s in
@@ -269,8 +260,8 @@ module Code_Gen : CODE_GEN = struct
       "je " ^ else_label ^ "\n" ^
       (main_generate const_tbl fvars depth dit) ^ "\n" ^
       "jmp " ^ exit_label ^ "\n" ^
-      else_label ^ ":" ^ (main_generate const_tbl fvars  depth dif) ^ "\n" ^
-      exit_label
+      else_label ^ ":\n" ^ (main_generate const_tbl fvars  depth dif) ^ "\n" ^
+      exit_label^":\n"
   | Seq'(expr'_list) -> String.concat "\n" (List.map (main_generate const_tbl fvars depth) expr'_list)
   | Def'(VarFree(name), value) -> 
     (main_generate const_tbl fvars depth value) ^ "\n" ^
@@ -280,10 +271,24 @@ module Code_Gen : CODE_GEN = struct
     (main_generate const_tbl fvars depth value) ^ "\n" ^
     "mov [fvar_tbl + " ^ (get_index_of_free_var name fvars) ^ " * 8], rax\n" ^
     "mov rax, SOB_VOID_ADDRESS"
+  | Set'(VarParam(name, minor), value) ->  
+    (main_generate const_tbl fvars depth value) ^
+    "mov qword[rbp+8*(4+minor)], rax\n
+     mov rax, SOB_VOID_ADDRESS"
+  | Set'(VarBound(name, minor, major), value) ->
+    (main_generate const_tbl fvars depth value) ^
+    "mov rbx, qword[rbp+(8*2)]\n
+     mov rbx, qword[rbx+(8*major)]\n
+     mov qword[rbx+(8*minor)], rax\n
+     mov rax, SOB_VOID_ADDRESS"
   | Var'(VarFree(name)) -> 
     "mov [fvar_tbl + " ^ (get_index_of_free_var name fvars) ^ " * 8], rax\n"
-  (*| Set'(VarBound(name, minor, major), value) -> *)
-  (*| Set'(VarParam(name, minor), value) -> *)
+  | Var'(VarParam(_,minor)) ->
+    "mov rax, qword[rbp+ 8*(4+minor)]\n"
+  | Var'(VarBound(_,major,minor)) ->
+    "mov rax, qword[rbp+8*2]\n
+     mov rax, qword[rax+(8*major)\n
+     mov rax, qword[rax+(8*minor)\n"  
   | LambdaSimple'(args, body) -> 
   (* Creating a clouse object?*)
   (* Extending the old env - depth + 1*)  
@@ -312,7 +317,15 @@ module Code_Gen : CODE_GEN = struct
    ^ "\n" ^
   "push " ^ string_of_int (List.length exprs) ^ "\n"
   (* Jmp to clouse ?*)
-  | _ -> raise X_not_yet_implemented;;
+  | _ -> raise X_not_yet_implemented;
+
+  and generate_or const_tbl fvars depth expr_list =
+    let index = string_of_int (get_counter) in
+      (match expr_list with
+    | [] -> "Lexit"^index^":\n"
+    | expr :: [] -> (main_generate const_tbl fvars depth expr)^"Lexit"^index^":\n"
+    | expr :: exprs -> (main_generate const_tbl fvars depth expr)^ "cmp rax, SOB_FALSE_ADDRESS\n jne Lexit"^index^"\n"^
+    (generate_or const_tbl fvars depth exprs));;
 
   let make_consts_tbl asts = get_const_tables asts;; 
   let make_fvars_tbl asts = get_fvar_table asts;;
