@@ -282,7 +282,7 @@ module Code_Gen : CODE_GEN = struct
      mov qword[rbx+(8*minor)], rax\n
      mov rax, SOB_VOID_ADDRESS"
   | Var'(VarFree(name)) -> 
-    "mov [fvar_tbl + " ^ (get_index_of_free_var name fvars) ^ " * 8], rax\n"
+    "mov rax, [fvar_tbl + (" ^ (get_index_of_free_var name fvars) ^ " * 8)]\n"
   | Var'(VarParam(_,minor)) ->
     "mov rax, qword[rbp+ 8*(4+minor)]\n"
   | Var'(VarBound(_,major,minor)) ->
@@ -312,11 +312,14 @@ module Code_Gen : CODE_GEN = struct
   add rsp, 24                            ; Clean stack from memcpy args\n
   mov [rbx], rax                         ; Save destination address in location of first vector in new env\n"
   | Applic'(op, exprs) -> 
-  (* Pushing all values of applic to stack *)
-    (String.concat "\n\n" (List.map (fun expr -> (main_generate const_tbl fvars depth expr) ^ "\npush rax\n") exprs))
-   ^ "\n" ^
-  "push " ^ string_of_int (List.length exprs) ^ "\n"
-  (* Jmp to clouse ?*)
+  (* Pushing evaluated args to stack *)
+  (String.concat "\n" (List.rev_map (fun exp -> (main_generate const_tbl fvars depth exp) ^ "NUMERATOR rax, rax\npush rax\n") exprs)) ^
+  (* Evaluating op *)
+  (main_generate const_tbl fvars depth op) ^ "\n" ^
+  (* Getting the right closure from the fvar table *)
+  "CLOSURE_CODE rax, rax\n
+  call rax\n
+  add rsp, (8 * " ^ string_of_int (List.length exprs) ^ ")"
   | _ -> raise X_not_yet_implemented;
 
   and generate_or const_tbl fvars depth expr_list =

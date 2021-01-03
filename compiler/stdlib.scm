@@ -30,6 +30,8 @@
       end
       (func (car lst) (fold-right func end (cdr lst)))))
 
+(define cons* (lambda () Nil))
+
 (define append
   (let ((null? null?)
 	(fold-right fold-right)
