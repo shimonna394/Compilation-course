@@ -167,7 +167,7 @@ module Code_Gen : CODE_GEN = struct
       | (Sexpr(Char(ch)),false) -> (let x = final_list := List.append !final_list [(Sexpr(Char(ch)),(!offset,"MAKE_LITERAL_CHAR"^sexp_to_string (Char(ch))^""))] in
       let add_to_offset = offset := !offset + 2 in
       empty_func [x,add_to_offset])
-      | (Sexpr(String(str)),false) -> (let x = final_list := List.append !final_list [(Sexpr(String(str)),(!offset,"MAKE_LITERAL_STRING(\""^str^"\")"))] in
+      | (Sexpr(String(str)),false) -> (let x = final_list := List.append !final_list [(Sexpr(String(str)),(!offset,"MAKE_LITERAL_STRING \""^str^"\", "^string_of_int(String.length str)^""))] in
       let add_to_offset = offset := !offset + 9 + (String.length str) in
       empty_func [x,add_to_offset])
       | (Sexpr(Symbol(str)),false) -> (let x = final_list := List.append !final_list [(Sexpr(Symbol(str)),(!offset,"MAKE_LITERAL_SYMBOL(const_tbl+"^string_of_int (get_index_from_table !final_list (String(str)))^")"))] in
@@ -230,12 +230,12 @@ module Code_Gen : CODE_GEN = struct
 
   let counter = ref 0;;
 
-  let get_counter = 
-    let ans = !counter in
+  let get_counter num = 
     let add_count = counter := !counter+1 in
+    let ans = !counter in
     take_second add_count ans;;
 
-  let get_counter_s = string_of_int (get_counter);;
+  let get_counter_s num = string_of_int (get_counter num);;
 
   let rec get_index_of_free_var name fvars = 
     match fvars with 
@@ -262,8 +262,8 @@ module Code_Gen : CODE_GEN = struct
     "mov rax, SOB_VOID_ADDRESS\n"
   | Or'(expr_list) -> generate_or const_tbl fvars depth expr_list
   | If'(test, dit, dif) -> 
-    let else_label = "Lelse"^ get_counter_s 
-    and exit_label = "Lexit" ^ get_counter_s in
+    let else_label = "Lelse"^ get_counter_s 1
+    and exit_label = "Lexit" ^ get_counter_s 1 in
       (main_generate const_tbl fvars  depth test) ^ "\n" ^
       "cmp rax, SOB_FALSE_ADDRESS\n" ^
       "je " ^ else_label ^ "\n" ^
@@ -296,8 +296,8 @@ module Code_Gen : CODE_GEN = struct
     "mov rax, qword[rbp+ 8*(4+"^string_of_int(minor)^")]\n"
   | Var'(VarBound(_,major,minor)) ->
     "mov rax, qword[rbp+8*2]\n
-     mov rax, qword[rax+(8*"^string_of_int(major)^")\n
-     mov rax, qword[rax+(8*"^string_of_int(minor)^")\n"  
+     mov rax, qword[rax+(8*"^string_of_int(major)^")]\n
+     mov rax, qword[rax+(8*"^string_of_int(minor)^")]\n"  
   | LambdaSimple'(args, body) -> generate_lambda_simple const_tbl fvars depth body
   | LambdaOpt'(args, opt, body) -> generate_lambda_opt const_tbl fvars depth (List.length args) body  
   | Applic'(op, exprs) -> 
@@ -327,19 +327,20 @@ module Code_Gen : CODE_GEN = struct
   | _ -> raise X_not_yet_implemented;
 
   and generate_or const_tbl fvars depth expr_list =
-    let index = string_of_int (get_counter) in
+    let index = get_counter_s 1 in
       (match expr_list with
     | [] -> "Lexit"^index^":\n"
     | expr :: [] -> (main_generate const_tbl fvars depth expr)^"Lexit"^index^":\n"
     | expr :: exprs -> (main_generate const_tbl fvars depth expr)^ "cmp rax, SOB_FALSE_ADDRESS\n jne Lexit"^index^"\n"^
     (generate_or const_tbl fvars depth exprs));
 
-  and make_ext_env depth index =
+  and make_ext_env depth =
+   let index = get_counter_s 1 in
    (if depth = 0
    then "mov rbx, SOB_NIL_ADDRESS\t\t\t; rbx hold the env which is empty in this situation\n"
    else "mov rcx, qword[rbp+8*3]\t\t\t; rcx hold the number of the arguments in the stack\n
    lea rcx, [rcx*8]\t\t\t; rcx hold now the number of bytes that sholuld be allocated for extenv[0]\n
-   Malloc rax, rcx\t\t\t; rax hold the pointer to extenv[0]\n
+   MALLOC rax, rcx\t\t\t; rax hold the pointer to extenv[0]\n
    mov rcx, qword[rbp+8*3]\t\t\t; rcx hold now the number of bytes that sholuld be allocated for extenv[0]\n
    mov rdx, 0\t\t\t; rdx is the index to iterate the arguments in the stack\n
    start_copy_loop"^index^":\n
@@ -365,8 +366,8 @@ module Code_Gen : CODE_GEN = struct
    end_env_loop"^index^":\n");  
 
   and generate_lambda_simple const_tbl fvars depth body = 
-   let index = get_counter_s in
-   let ext_env = make_ext_env depth index in
+   let index = get_counter_s 1 in
+   let ext_env = make_ext_env depth in
    let l_code = "Lcode"^index^":\n
     push rbp\n
     mov rbp, rsp\n"^

@@ -148,6 +148,11 @@
 %define MAKE_CLOSURE(r, env, body) \
         MAKE_TWO_WORDS r, T_CLOSURE, env, body
 
+%macro MAKE_LITERAL_STRING 2
+	db T_STRING
+	dq %2
+	db %1
+%endmacro
 	
 ;;; Macros and routines for printing Scheme OBjects to STDOUT
 %define CHAR_NUL 0
