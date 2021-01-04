@@ -301,29 +301,43 @@ module Code_Gen : CODE_GEN = struct
   | LambdaSimple'(args, body) -> generate_lambda_simple const_tbl fvars depth body
   | LambdaOpt'(args, opt, body) -> generate_lambda_opt const_tbl fvars depth (List.length args) body  
   | Applic'(op, exprs) -> 
-  (* Pushing evaluated args to stack *)
-  (String.concat "\n" (List.rev_map (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
+  (* Pushing Nil as magic arg *)
+  "push SOB_NIL_ADDRESS\n" ^
+  (* Pushing evaluated args to stack in reverase order *)
+  (String.concat "\n" (List.rev_map 
+    (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
+  (* Pushing the argument count *)
   "push "^string_of_int(List.length exprs)^"\n"^
-  (* Evaluating op *)
+  (* Pushing the env *)
+  "CLOSURE_ENV rax, rax\n
+   push rax\n"^
+   (* Evaluating op to get the Clousre SOB in rax *)
   (main_generate const_tbl fvars depth op) ^ "\n" ^
   (* Getting the right closure from the fvar table *)
-  "CLOSURE_ENV rbx, rax\n
-   push rbx\n
-   CLOSURE_CODE rax, rax\n
-   call rax\n
-   add rsp, (8 * " ^ string_of_int ((List.length exprs)+2) ^ ")"
-  | ApplicTP'(op, exprs) -> 
-  (* Pushing evaluated args to stack *)
-  (String.concat "\n" (List.rev_map (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
-  "push "^string_of_int(List.length exprs)^"\n"^
-  (* Evaluating op *)
-  (main_generate const_tbl fvars depth op) ^ "\n" ^
-  (* Getting the right closure from the fvar table *)
-  "CLOSURE_ENV rbx, rax\n
-   push rbx\n
-   CLOSURE_CODE rax, rax\n
-   call rax\n
-   add rsp, (8 * " ^ string_of_int ((List.length exprs)+2) ^ ")"
+   "CLOSURE_CODE rax, rax\n
+   call rax\n" ^
+   (* Cleaning the stack after return*)
+   "add rsp, (8 * " ^ string_of_int ((List.length exprs) + 3) ^ ")"
+    | ApplicTP'(op, exprs) -> 
+    (* Running over old frame *)
+    "sub rsp, 32\n" ^
+    (* Pushing Nil as magic arg *)
+    "push SOB_NIL_ADDRESS\n" ^
+    (* Pushing evaluated args to stack in reverase order *)
+    (String.concat "\n" (List.rev_map 
+      (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
+    (* Pushing the argument count *)
+    "push "^string_of_int(List.length exprs)^"\n"^
+    (* Pushing the env *)
+    "CLOSURE_ENV rax, rax\n
+     push rax\n"^
+     (* Evaluating op to get the Clousre SOB in rax *)
+    (main_generate const_tbl fvars depth op) ^ "\n" ^
+    (* Getting the right closure from the fvar table *)
+     "CLOSURE_CODE rax, rax\n
+     call rax\n" ^
+     (* Cleaning the stack after return*)
+     "add rsp, (8 * " ^ string_of_int ((List.length exprs) + 3) ^ ")"
   | _ -> raise X_not_yet_implemented;
 
   and generate_or const_tbl fvars depth expr_list =
