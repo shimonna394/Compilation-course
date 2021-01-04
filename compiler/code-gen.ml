@@ -64,8 +64,8 @@ module Code_Gen : CODE_GEN = struct
   let final_list = ref
     [(Void, (0,"db T_VOID"));
     (Sexpr(Nil),(1,"db T_NIL"));
-    (Sexpr(Bool false),(2,"db T_BOOL, 0"));
-    (Sexpr(Bool true),(4,"db T_BOOL, 1"))];;
+    (Sexpr(Bool true),(2,"db T_BOOL, 1"));
+    (Sexpr(Bool false),(4,"db T_BOOL, 0"))];;
   
     let temp_list = ref [];;
     
@@ -81,16 +81,16 @@ module Code_Gen : CODE_GEN = struct
     | BoxGet'(var) -> ()
     | BoxSet'(var, expr) -> (get_sexp_list expr)
     | If'(test, dit, dif) -> (empty_func (List.map get_sexp_list [test; dit; dif])) 
-    | Seq'(exprs) -> (empty_func (List.map get_sexp_list exprs))
+    | Seq'(expr_list) -> (empty_func (List.map get_sexp_list expr_list))
     | Set'(set_var, set_val) -> (get_sexp_list set_val)
     | Def'(def_var, def_val) -> (get_sexp_list def_val)
-    | Or'(exprs) -> (empty_func (List.map get_sexp_list exprs))
+    | Or'(expr_list) -> (empty_func (List.map get_sexp_list expr_list))
     | LambdaSimple'(params, body) -> (empty_func (get_sexp_list body))
     | LambdaOpt'(params, opt_param, body) -> (empty_func (get_sexp_list body))
-    | Applic'(operator, args) -> (let a = [get_sexp_list operator] in
+    | Applic'(proc, args) -> (let a = [get_sexp_list proc] in
                                     let b = List.map get_sexp_list args in
                                     empty_func [a; b])
-    | ApplicTP'(operator, args) -> (let a = [get_sexp_list operator] in
+    | ApplicTP'(proc, args) -> (let a = [get_sexp_list proc] in
                                       let b = List.map get_sexp_list args in
                                       empty_func [a; b]));;
   
@@ -107,6 +107,12 @@ module Code_Gen : CODE_GEN = struct
       | String(str) :: rest when (sexpr_eq (String(str)) sexp) -> true
       | car :: cdr -> find_sexp cdr sexp
       | [] -> false);;  
+
+    let rec find_sexp2 sexp_list sexp = 
+        (match sexp_list with
+        | (Sexpr(sexpr), false) :: rest when (sexpr_eq sexpr sexp) -> true
+        | car :: cdr -> find_sexp2 cdr sexp
+        | [] -> false);;    
   
     let sexp_to_string sexp = (match sexp with
       | Number(Fraction(x,y)) -> "("^string_of_int(x)^","^string_of_int(y)^")"
@@ -116,27 +122,30 @@ module Code_Gen : CODE_GEN = struct
       | Symbol(str) -> str
       | _ -> "");;
       
-    let rec sexp_const_temp sexp   = (match sexp with
-      | Number(Fraction(x,y)) -> (let x = temp_list := List.append !temp_list [(Sexpr(sexp), false)] in
-        empty_func [x])
-      | Number(Float(num)) -> (let x = temp_list := List.append !temp_list [(Sexpr(sexp), false)] in
-        empty_func [x])
-      | Char(ch) -> (let x = temp_list := List.append !temp_list [(Sexpr(sexp), false)] in
-        empty_func [x])
-      | String(str) -> (let x = temp_list := List.append !temp_list [(Sexpr(sexp), false)] in
-        empty_func [x])
-      | Symbol(str) -> 
-        (if find_sexp !sexp_list (String(str)) = false
-        then (let first_step = sexp_const_temp (String(str)) in
-        let x = temp_list := List.append !temp_list [(Sexpr(sexp), false)] in
-        empty_func [first_step, x])
-        else (let x = temp_list := List.append !temp_list [(Sexpr(sexp), false)] in
-        empty_func [x]))
-      | Pair(x,y)-> (let car_pair = temp_list := List.append !temp_list [(Sexpr(x), false)] in
-        let cdr_pair = sexp_const_temp y in
-        let z = temp_list:=List.append !temp_list [(Sexpr(sexp), false)] in
-        empty_func [car_pair, cdr_pair,z])
-      | _ -> ());;  
+      let rec sexp_const_temp sexp = 
+        (if (find_sexp2 !temp_list sexp) = false
+        then (match sexp with
+        | Number(Fraction(x,y)) -> (let x = temp_list := List.append !temp_list [(Sexpr(sexp), false)] in
+          empty_func [x])
+        | Number(Float(num)) -> (let x = temp_list := List.append !temp_list [(Sexpr(sexp), false)] in
+          empty_func [x])
+        | Char(ch) -> (let x = temp_list := List.append !temp_list [(Sexpr(sexp), false)] in
+          empty_func [x])
+        | String(str) -> (let x = temp_list := List.append !temp_list [(Sexpr(sexp), false)] in
+          empty_func [x])
+        | Symbol(str) -> 
+          (if find_sexp !sexp_list (String(str)) = false
+          then (let first_step = sexp_const_temp (String(str)) in
+          let x = temp_list := List.append !temp_list [(Sexpr(sexp), false)] in
+          empty_func [first_step, x])
+          else (let x = temp_list := List.append !temp_list [(Sexpr(sexp), false)] in
+          empty_func [x]))
+        | Pair(x,y)-> (let car_pair = sexp_const_temp x in
+          let cdr_pair = sexp_const_temp y in
+          let z = temp_list:=List.append !temp_list [(Sexpr(sexp), false)] in
+          empty_func [car_pair, cdr_pair,z])
+        | _ -> ())
+          else ());; 
     
     let rec make_temp_from_sexp_list sexp_list = 
       (match sexp_list with
@@ -176,8 +185,8 @@ module Code_Gen : CODE_GEN = struct
       let ans = List.append !final_list [] in
       let clean = final_list := [(Void, (0,"db T_VOID"));
       (Sexpr(Nil),(1,"db T_NIL"));
-      (Sexpr(Bool false),(2,"db T_BOOL, 0"));
-      (Sexpr(Bool true),(4,"db T_BOOL, 1"))] in
+      (Sexpr(Bool true),(2,"db T_BOOL, 1"));
+      (Sexpr(Bool false),(4,"db T_BOOL, 0"))] in
       let clean2 = sexp_list := [] in
       let clean3 = temp_list := [] in
       let clean4 = offset := 6 in
@@ -242,8 +251,8 @@ module Code_Gen : CODE_GEN = struct
   | Const'(Void) -> "mov rax, const_tbl + 0\n"
   | Box'(var) -> (main_generate const_tbl fvars depth (Var'(var)))^
     "push rax\n
-      MALLOC rax, 8\n
-      pop qword [rax]\n"
+     MALLOC rax, 8\n
+     pop qword [rax]\n"
   | BoxGet'(var) -> (main_generate const_tbl fvars depth (Var'(var)))^
     "mov rax, qword[rax]\n" 
   | BoxSet'(var, expr) -> (main_generate const_tbl fvars depth expr)^
@@ -273,53 +282,48 @@ module Code_Gen : CODE_GEN = struct
     "mov rax, SOB_VOID_ADDRESS"
   | Set'(VarParam(name, minor), value) ->  
     (main_generate const_tbl fvars depth value) ^
-    "mov qword[rbp+8*(4+minor)], rax\n
+    "mov qword[rbp+8*(4+"^string_of_int(minor)^")], rax\n
      mov rax, SOB_VOID_ADDRESS"
   | Set'(VarBound(name, minor, major), value) ->
     (main_generate const_tbl fvars depth value) ^
     "mov rbx, qword[rbp+(8*2)]\n
-     mov rbx, qword[rbx+(8*major)]\n
-     mov qword[rbx+(8*minor)], rax\n
+     mov rbx, qword[rbx+(8*"^string_of_int(major)^")]\n
+     mov qword[rbx+(8*"^string_of_int(minor)^")], rax\n
      mov rax, SOB_VOID_ADDRESS"
   | Var'(VarFree(name)) -> 
     "mov rax, [fvar_tbl + (" ^ (get_index_of_free_var name fvars) ^ " * 8)]\n"
   | Var'(VarParam(_,minor)) ->
-    "mov rax, qword[rbp+ 8*(4+minor)]\n"
+    "mov rax, qword[rbp+ 8*(4+"^string_of_int(minor)^")]\n"
   | Var'(VarBound(_,major,minor)) ->
     "mov rax, qword[rbp+8*2]\n
-     mov rax, qword[rax+(8*major)\n
-     mov rax, qword[rax+(8*minor)\n"  
-  | LambdaSimple'(args, body) -> 
-  (* Creating a clouse object?*)
-  (* Extending the old env - depth + 1*)  
-  "mov rdi, " ^ string_of_int ((depth + 1) * 8) ^ "\n" ^
-  "call malloc                           ; Get an address for the new env\n              
-  mov [malloc_pointer], rax              ; Save it in malloc_pointer\n
-  mov rax, [rsp + 24]                    ; Copy old env pointer to rax\n
-  push " ^ string_of_int (depth * 8) ^ " ; Copy old env size * 8 bytes for each address size\n
-  push rax                               ; Push Source address (old env)\n
-  push ([malloc_pointer] + 8)            ; Push Destination address (new env) starting at 1 index\n
-  call memcpy                            ; Copy the old env to new\n
-  add rsp, 24                            ; Clean stack from memcpy args\n
-  mov rbx, rax                           ; Save destination pointer (new env)\n
-  mov rdi, [rsp + 32]                    ; Get a vector of size mentioned in stack (arg count)\n
-  call malloc\n
-  mov [malloc_pointer], rax\n
-  push ([rsp + 32] * 8)                  ; Copy args from stack with memcpy of size arg count\n
-  push rsp + 40                          ; Location of args\n
-  push [malloc_pointer]                  ; Destination address for vector 0\n
-  call memcpy\n
-  add rsp, 24                            ; Clean stack from memcpy args\n
-  mov [rbx], rax                         ; Save destination address in location of first vector in new env\n"
+     mov rax, qword[rax+(8*"^string_of_int(major)^")\n
+     mov rax, qword[rax+(8*"^string_of_int(minor)^")\n"  
+  | LambdaSimple'(args, body) -> generate_lambda_simple const_tbl fvars depth body
+  | LambdaOpt'(args, opt, body) -> generate_lambda_opt const_tbl fvars depth (List.length args) body  
   | Applic'(op, exprs) -> 
   (* Pushing evaluated args to stack *)
-  (String.concat "\n" (List.rev_map (fun exp -> (main_generate const_tbl fvars depth exp) ^ "NUMERATOR rax, rax\npush rax\n") exprs)) ^
+  (String.concat "\n" (List.rev_map (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
+  "push "^string_of_int(List.length exprs)^"\n"^
   (* Evaluating op *)
   (main_generate const_tbl fvars depth op) ^ "\n" ^
   (* Getting the right closure from the fvar table *)
-  "CLOSURE_CODE rax, rax\n
-  call rax\n
-  add rsp, (8 * " ^ string_of_int (List.length exprs) ^ ")"
+  "CLOSURE_ENV rbx, rax\n
+   push rbx\n
+   CLOSURE_CODE rax, rax\n
+   call rax\n
+   add rsp, (8 * " ^ string_of_int ((List.length exprs)+2) ^ ")"
+  | ApplicTP'(op, exprs) -> 
+  (* Pushing evaluated args to stack *)
+  (String.concat "\n" (List.rev_map (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
+  "push "^string_of_int(List.length exprs)^"\n"^
+  (* Evaluating op *)
+  (main_generate const_tbl fvars depth op) ^ "\n" ^
+  (* Getting the right closure from the fvar table *)
+  "CLOSURE_ENV rbx, rax\n
+   push rbx\n
+   CLOSURE_CODE rax, rax\n
+   call rax\n
+   add rsp, (8 * " ^ string_of_int ((List.length exprs)+2) ^ ")"
   | _ -> raise X_not_yet_implemented;
 
   and generate_or const_tbl fvars depth expr_list =
@@ -328,7 +332,64 @@ module Code_Gen : CODE_GEN = struct
     | [] -> "Lexit"^index^":\n"
     | expr :: [] -> (main_generate const_tbl fvars depth expr)^"Lexit"^index^":\n"
     | expr :: exprs -> (main_generate const_tbl fvars depth expr)^ "cmp rax, SOB_FALSE_ADDRESS\n jne Lexit"^index^"\n"^
-    (generate_or const_tbl fvars depth exprs));;
+    (generate_or const_tbl fvars depth exprs));
+
+  and make_ext_env depth index =
+   (if depth = 0
+   then "mov rbx, SOB_NIL_ADDRESS\t\t\t; rbx hold the env which is empty in this situation\n"
+   else "mov rcx, qword[rbp+8*3]\t\t\t; rcx hold the number of the arguments in the stack\n
+   lea rcx, [rcx*8]\t\t\t; rcx hold now the number of bytes that sholuld be allocated for extenv[0]\n
+   Malloc rax, rcx\t\t\t; rax hold the pointer to extenv[0]\n
+   mov rcx, qword[rbp+8*3]\t\t\t; rcx hold now the number of bytes that sholuld be allocated for extenv[0]\n
+   mov rdx, 0\t\t\t; rdx is the index to iterate the arguments in the stack\n
+   start_copy_loop"^index^":\n
+   cmp rdx, rcx\t\t\t; check if the loop should be finished\n
+   je end_loop"^index^"\n
+   mov rbx, [rbp+8*(4+rdx)]\t\t\t; rbx hold the argumnet in the stack according to rdx index\n
+   mov [rax+8*rdx], rbx\t\t\t; put the argument from the stack in the extenv[0]\n
+   inc rdx\t\t\t; inc the index of rdx\n
+   jmp  start_copy_loop"^index^"\n
+   end_loop"^index^":\n
+   MALLOC rbx, "^string_of_int((depth+1)*8)^"\t\t\t; allocate bytes for extenv\n
+   mov [rbx], rax\t\t\t; extenv[0] = rax\n
+   mov rax, qword[rbp+8*2]\t\t\t; rax = old env\n 
+   mov rdx, 0\t\t\t; rdx = index for the loop\n
+   mov rcx, "^string_of_int(depth)^"\t\t\t; number of elements in old env\n
+   start_env_loop"^index^":\n
+   cmp rdx, rcx \t\t\t; check if the loop should be finished\n
+   je end_env_loop"^index^"\n
+   mov rdi, [rax+rdx*8]\t\t\t; rdi hold the pointer to oldenv[rdx]\n
+   mov[rbx+8+(rdx*8)], rdi\t\t\t; extenv[rdx+1]=oldenv[rdx]\n
+   inc rdx\t\t\t; inc the index of rdx\n
+   jmp start_env_loop"^index^"\n
+   end_env_loop"^index^":\n");  
+
+  and generate_lambda_simple const_tbl fvars depth body = 
+   let index = get_counter_s in
+   let ext_env = make_ext_env depth index in
+   let l_code = "Lcode"^index^":\n
+    push rbp\n
+    mov rbp, rsp\n"^
+    (main_generate const_tbl fvars (depth+1) body)^"\n
+    leave\n
+    ret\n
+    Lcont"^index^":\n" in
+    ext_env^
+    "MAKE_CLOSURE(rax,rbx, Lcode"^index^")\n
+    jmp Lcont"^index^"\n"^
+    l_code;
+
+  and generate_lambda_opt const_tbl fvars depth num_of_args body = 
+  (* let index = get_counter_s in
+   let fix_stack = 
+    "mov rbx, qword[rbp+3*8]\n
+     mov rcx, "^string_of_int(num_of_args)^"\n
+     cmp rbx, rcx\n
+     je finish_fix_stack\n
+     mov rdx, rbx\n
+     sub rdx, rcx\n
+     finish_fix_stack"^index^":\n" *)
+   raise X_not_yet_implemented;; 
 
   let make_consts_tbl asts = get_const_tables asts;; 
   let make_fvars_tbl asts = get_fvar_table asts;;
