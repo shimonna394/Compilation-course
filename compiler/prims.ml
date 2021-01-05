@@ -23,8 +23,8 @@ module Prims : PRIMS = struct
        push rbp
        mov rbp, rsp 
        " ^ body ^ "
-         pop rbp
-         ret";;
+       pop rbp
+       ret";;
 
   (* Many of the low-level stdlib procedures are predicate procedures, which perform 
      some kind of comparison, and then return one of the constants sob_true or sob_false.
@@ -308,8 +308,60 @@ module Prims : PRIMS = struct
       ] in
     String.concat "\n\n" (List.map (fun (a, b, c) -> (b c a)) misc_parts);;
 
+    (* adding here the functions - Shimi*)
+
+    let car =
+      "car:
+       push rbp
+       mov rbp, rsp 
+       mov rsi, PVAR(0)
+	     CAR rax, rsi
+       pop rbp
+       ret";;
+
+    let cdr =
+     "cdr:
+      push rbp
+      mov rbp, rsp 
+      mov rsi, PVAR(0)
+      CDR rax, rsi
+      pop rbp
+      ret";;
+
+    let set_car =
+     "set-car:
+      push rbp
+      mov rbp, rsp 
+      mov rsi, PVAR(0)
+      mov rdi, PVAR(1)
+      mov[rsi+TYPE_SIZE], rdi
+      pop rbp
+      ret";;
+
+    let set_cdr =
+     "set-cdr:
+      push rbp
+      mov rbp, rsp 
+      mov rsi, PVAR(0)
+      mov rdi, PVAR(1)
+      mov[rsi+TYPE_SIZE+WORD_SIZE], rdi
+      pop rbp
+      ret";;
+
+    let cons =
+     "cons:
+      push rbp
+      mov rbp, rsp 
+      mov rsi, PVAR(0)
+      mov rdi, PVAR(1)
+      MAKE_PAIR(rax, rsi, rdi)
+      pop rbp
+      ret";;
+      
+      
+
   (* This is the interface of the module. It constructs a large x86 64-bit string using the routines
      defined above. The main compiler pipline code (in compiler.ml) calls into this module to get the
      string of primitive procedures. *)
-  let procs = String.concat "\n\n" [type_queries ; numeric_ops; misc_ops];;
+  let procs = String.concat "\n\n" [type_queries ; numeric_ops; misc_ops;];;
 end;;

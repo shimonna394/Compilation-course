@@ -50,7 +50,7 @@ module Code_Gen : CODE_GEN = struct
       "+", "add"; "*", "mul"; "/", "div"; "=", "eq"; "<", "lt";
       (* Additional rational numebr ops *)
       "numerator", "numerator"; "denominator", "denominator"; "gcd", "gcd";
-      (* you can add yours here *)
+      (* you can add yours here *) 
     ] 
 
   let empty_func =
@@ -301,43 +301,51 @@ module Code_Gen : CODE_GEN = struct
   | LambdaSimple'(args, body) -> generate_lambda_simple const_tbl fvars depth body
   | LambdaOpt'(args, opt, body) -> generate_lambda_opt const_tbl fvars depth (List.length args) body  
   | Applic'(op, exprs) -> 
-  (* Pushing Nil as magic arg *)
-  "push SOB_NIL_ADDRESS\n" ^
-  (* Pushing evaluated args to stack in reverase order *)
-  (String.concat "\n" (List.rev_map 
-    (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
-  (* Pushing the argument count *)
+  let index = get_counter_s 1 in
+  (* Pushing evaluated args to stack *)
+  "push SOB_NIL_ADDRESS\n"^
+  (String.concat "\n" (List.rev_map (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
   "push "^string_of_int(List.length exprs)^"\n"^
-  (* Pushing the env *)
-  "CLOSURE_ENV rax, rax\n
-   push rax\n"^
-   (* Evaluating op to get the Clousre SOB in rax *)
+  (* Evaluating op *)
   (main_generate const_tbl fvars depth op) ^ "\n" ^
   (* Getting the right closure from the fvar table *)
-   "CLOSURE_CODE rax, rax\n
-   call rax\n" ^
-   (* Cleaning the stack after return*)
-   "add rsp, (8 * " ^ string_of_int ((List.length exprs) + 3) ^ ")"
-    | ApplicTP'(op, exprs) -> 
-    (* Running over old frame *)
-    "sub rsp, 32\n" ^
-    (* Pushing Nil as magic arg *)
-    "push SOB_NIL_ADDRESS\n" ^
-    (* Pushing evaluated args to stack in reverase order *)
-    (String.concat "\n" (List.rev_map 
-      (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
-    (* Pushing the argument count *)
-    "push "^string_of_int(List.length exprs)^"\n"^
-    (* Pushing the env *)
-    "CLOSURE_ENV rax, rax\n
-     push rax\n"^
-     (* Evaluating op to get the Clousre SOB in rax *)
-    (main_generate const_tbl fvars depth op) ^ "\n" ^
-    (* Getting the right closure from the fvar table *)
-     "CLOSURE_CODE rax, rax\n
-     call rax\n" ^
-     (* Cleaning the stack after return*)
-     "add rsp, (8 * " ^ string_of_int ((List.length exprs) + 3) ^ ")"
+  (* I changed it a little for the lambda opt *)
+  "CLOSURE_ENV rbx, rax\n
+   push rbx\n
+   CLOSURE_CODE rax, rax\n
+   call rax\n
+   mov rdx, [rsp+8]\n
+   add rdx, 3\n
+   cleanloop"^index^":\n
+   cmp rdx, 0\n
+   je end_cleanloop"^index^"\n
+   add rsp, 8\n
+   dec rdx\n
+   jmp cleanloop"^index^"\n
+   end_cleanloop"^index^":\n"
+  | ApplicTP'(op, exprs) -> 
+  let index = get_counter_s 1 in
+  (* Pushing evaluated args to stack *)
+  "push SOB_NIL_ADDRESS\n"^
+  (String.concat "\n" (List.rev_map (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
+  "push "^string_of_int(List.length exprs)^"\n"^
+  (* Evaluating op *)
+  (main_generate const_tbl fvars depth op) ^ "\n" ^
+  (* Getting the right closure from the fvar table *)
+  (* I changed it a little for the lambda opt *)
+  "CLOSURE_ENV rbx, rax\n
+   push rbx\n
+   CLOSURE_CODE rax, rax\n
+   call rax\n
+   mov rdx, [rsp+8]\n
+   add rdx, 3\n
+   cleanloop"^index^":\n
+   cmp rdx, 0\n
+   je end_cleanloop"^index^"\n
+   add rsp, 8\n
+   dec rdx\n
+   jmp cleanloop"^index^"\n
+   end_cleanloop"^index^":\n"
   | _ -> raise X_not_yet_implemented;
 
   and generate_or const_tbl fvars depth expr_list =
@@ -348,12 +356,11 @@ module Code_Gen : CODE_GEN = struct
     | expr :: exprs -> (main_generate const_tbl fvars depth expr)^ "cmp rax, SOB_FALSE_ADDRESS\n jne Lexit"^index^"\n"^
     (generate_or const_tbl fvars depth exprs));
 
-  and make_ext_env depth =
-   let index = get_counter_s 1 in
+  and make_ext_env depth index =
    (if depth = 0
    then "mov rbx, SOB_NIL_ADDRESS\t\t\t; rbx hold the env which is empty in this situation\n"
    else "mov rcx, qword[rbp+8*3]\t\t\t; rcx hold the number of the arguments in the stack\n
-   lea rcx, [rcx*8]\t\t\t; rcx hold now the number of bytes that sholuld be allocated for extenv[0]\n
+   lea rcx, [(rcx+1)*8]\t\t\t; rcx hold now the number of bytes that sholuld be allocated for extenv[0]\n
    MALLOC rax, rcx\t\t\t; rax hold the pointer to extenv[0]\n
    mov rcx, qword[rbp+8*3]\t\t\t; rcx hold now the number of bytes that sholuld be allocated for extenv[0]\n
    mov rdx, 0\t\t\t; rdx is the index to iterate the arguments in the stack\n
@@ -365,6 +372,7 @@ module Code_Gen : CODE_GEN = struct
    inc rdx\t\t\t; inc the index of rdx\n
    jmp  start_copy_loop"^index^"\n
    end_loop"^index^":\n
+   mov qword[rax+8*rdx], SOB_NIL_ADDRESS\t\t\t; adding the magic\n
    MALLOC rbx, "^string_of_int((depth+1)*8)^"\t\t\t; allocate bytes for extenv\n
    mov [rbx], rax\t\t\t; extenv[0] = rax\n
    mov rax, qword[rbp+8*2]\t\t\t; rax = old env\n 
@@ -381,7 +389,7 @@ module Code_Gen : CODE_GEN = struct
 
   and generate_lambda_simple const_tbl fvars depth body = 
    let index = get_counter_s 1 in
-   let ext_env = make_ext_env depth in
+   let ext_env = make_ext_env depth index in
    let l_code = "Lcode"^index^":\n
     push rbp\n
     mov rbp, rsp\n"^
@@ -395,16 +403,63 @@ module Code_Gen : CODE_GEN = struct
     l_code;
 
   and generate_lambda_opt const_tbl fvars depth num_of_args body = 
-  (* let index = get_counter_s in
+   let index = get_counter_s 1 in
+   let ext_env = make_ext_env depth index in
    let fix_stack = 
-    "mov rbx, qword[rbp+3*8]\n
-     mov rcx, "^string_of_int(num_of_args)^"\n
+    "push rbp\n
+     mov rbp, rsp\n
+     mov rbx, qword[rbp+3*8]\t\t\t; rbx hold the number of argumnents\n
+     mov rcx, "^string_of_int(num_of_args)^"\t\t\t; rcx hold the number of arguments that lambda opt has\n
+     cmp rbx, rcx\t\t\t; if they are equal, there is no need to fix the stack\n
+     je finish_fix_stack"^index^"\n
+     mov rdx, 0\n
+     mov rdi, [rbp+((4+rbx-1)*8)]\t\t\t ; rdi hold the last parameter\n
+     MAKE_PAIR(rax, rdi, SOB_NIL_ADDRESS)\t\t\t ; make pair from the last argument\n
+     push rbx\n
+     dec rbx\n
+     start_pair_loop"^index^":\n
      cmp rbx, rcx\n
-     je finish_fix_stack\n
-     mov rdx, rbx\n
-     sub rdx, rcx\n
-     finish_fix_stack"^index^":\n" *)
-   raise X_not_yet_implemented;; 
+     je end_pair_loop"^index^"
+     mov rdi, [rbp+((4+rbx-1)*8)]\t\t\t; rdi hold the current parameter\n
+     mov rsi, rax\t\t\t; save the pointer for the current pair \n
+     MAKE_PAIR(rax, rdi, rsi)\t\t\t; update the pair\n
+     dec rbx\n
+     inc rdx\n
+     jmp start_pair_loop"^index^"\n
+     end_pair_loop"^index^":\n
+     pop rbx\n
+     mov [rbp+((4+rbx-1)*8)], rax\n
+     add rbx, 2\n
+     mov rcx, rbx\n
+     sub rcx, rdx\n
+     start_copy_stack"^index^":\n
+     mov rax, qword[rbp+rcx*8]\n
+     mov [rbp+rbx*8], rax\n
+     dec rbx\n
+     dec rcx\n
+     cmp rcx, 0\n
+     jne start_copy_stack"^index^"\n
+     end_copy_stack"^index^":\n
+     pop_loop"^index^":\n
+     cmp rdx, 0
+     je end_pop_loop"^index^"\n
+     add rsp, 8\n
+     dec rdx\n
+     jmp pop_loop"^index^"\n
+     end_pop_loop"^index^":\n
+     mov rbp, rsp
+     mov qword[rbp+24], "^string_of_int(num_of_args+1)^"\n
+     finish_fix_stack"^index^":\n" in
+     let label_lcode = "Lcode"^index^":\n" in
+     let lcode_body = label_lcode^fix_stack^
+     (main_generate const_tbl fvars (depth+1) body)^"\n
+     leave\n
+     ret\n
+     Lcont"^index^":\n" in
+     ext_env^
+    "MAKE_CLOSURE(rax,rbx, Lcode"^index^")\n
+     jmp Lcont"^index^"\n"^
+     lcode_body;;
 
   let make_consts_tbl asts = get_const_tables asts;; 
   let make_fvars_tbl asts = get_fvar_table asts;;

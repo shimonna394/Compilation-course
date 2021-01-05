@@ -22,15 +22,23 @@
   (lambda (func acc lst)
    (if (null? lst)
         acc
-        (fold-left func (func acc (car lst)) (cdr lst))))
+        (fold-left func (func acc (car lst)) (cdr lst)))))
 
 (define fold-right
  (lambda (func end lst)
    (if (null? lst)
       end
-      (func (car lst) (fold-right func end (cdr lst)))))
+      (func (car lst) (fold-right func end (cdr lst))))))
 
-(define cons* (lambda () Nil))
+(define cons* 
+ (lambda lst
+  (if (eq? lst '())
+   '()
+   (if (= (length lst) 1)
+    (car lst)
+	(let ((reversed_list (reverse_list '() lst)))
+	 (fold-right cons (car reversed_list) (reverse_list '() (cdr reversed_list))))))))
+	  
 
 (define append
   (let ((null? null?)
@@ -185,3 +193,10 @@
 		 ((and (string? x) (string? y)) (equal?-loop (string->list x) (string->list y)))
 		 (else (eq? x y))))))
     equal?-loop)))
+
+
+(define reverse_list
+ (lambda (reverse_lst temp_lst)
+  (if (eq? temp_lst '())
+   reverse_lst
+   (reverse_list (cons (car temp_lst) reverse_lst) (cdr temp_lst)))))	
