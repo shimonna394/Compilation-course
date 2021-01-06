@@ -1,1 +1,2 @@
-(eq? 1 1)
+(define sharon (lambda () ((lambda (x) x) 1)))
+(sharon)

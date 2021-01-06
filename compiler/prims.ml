@@ -329,7 +329,7 @@ module Prims : PRIMS = struct
       ret";;
 
     let set_car =
-     "set-car:
+     "set_car:
       push rbp
       mov rbp, rsp 
       mov rsi, PVAR(0)
@@ -339,7 +339,7 @@ module Prims : PRIMS = struct
       ret";;
 
     let set_cdr =
-     "set-cdr:
+     "set_cdr:
       push rbp
       mov rbp, rsp 
       mov rsi, PVAR(0)
@@ -358,10 +358,34 @@ module Prims : PRIMS = struct
       pop rbp
       ret";;
       
+    let apply =
+    "apply:
+      push rbp
+      mov rbp, rsp
+      .do_loop:
+        mov rdi, PVAR(1)  ; List
+        cmp rdi, SOB_NIL_ADDRESS
+        je .end
+        CAR rax, rdi
+        CDR rdi, rdi
+        mov PVAR(1), rdi
+        push SOB_NIL_ADDRESS
+        push rax
+        push 1
+        mov rsi, PVAR(0)  ; Closure
+        CLOSURE_ENV rax, rsi
+        push rax
+        CLOSURE_CODE rax, rsi
+        call rax
+        add rsp, 32
+        jmp .do_loop 
+      .end:
+        pop rbp
+        ret";;
       
 
   (* This is the interface of the module. It constructs a large x86 64-bit string using the routines
      defined above. The main compiler pipline code (in compiler.ml) calls into this module to get the
      string of primitive procedures. *)
-  let procs = String.concat "\n\n" [type_queries ; numeric_ops; misc_ops;];;
+  let procs = String.concat "\n\n" [type_queries ; numeric_ops; misc_ops; car; cdr; set_car; set_cdr; cons; apply];;
 end;;

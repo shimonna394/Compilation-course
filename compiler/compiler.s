@@ -17,17 +17,6 @@
 %define MB(n) 1024*KB(n)
 %define GB(n) 1024*MB(n)
 
-%macro WRITE_DEBUG_PRINT 2
-	push rax
-	mov rax, 4
-	mov rbx, 1
-	mov rcx, %1
-	mov rdx, %2
-	int 0x80
-	pop rax
-%endmacro
-
-
 %macro SKIP_TYPE_TAG 2
 	mov %1, qword [%2+TYPE_SIZE]	
 %endmacro	

@@ -35,6 +35,8 @@ let make_prologue consts_tbl fvars_tbl =
     (* Additional rational numebr ops *)
     "numerator", "numerator"; "denominator", "denominator"; "gcd", "gcd";
     (* you can add yours here *)
+    "car", "car"; "cdr", "cdr";"set_car", "set_car";"set_cdr", "set_cdr";
+    "cons", "cons"; "apply", "apply"
   ] in
   let make_primitive_closure (prim, label) =
     (* This implementation assumes fvars are addressed by an offset from the label `fvar_tbl`.

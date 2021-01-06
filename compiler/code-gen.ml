@@ -50,7 +50,9 @@ module Code_Gen : CODE_GEN = struct
       "+", "add"; "*", "mul"; "/", "div"; "=", "eq"; "<", "lt";
       (* Additional rational numebr ops *)
       "numerator", "numerator"; "denominator", "denominator"; "gcd", "gcd";
-      (* you can add yours here *) 
+      (* you can add yours here *)
+      "car", "car"; "cdr", "cdr";"set_car", "set_car";"set_cdr", "set_cdr";
+      "cons", "cons"; "apply", "apply";
     ] 
 
   let empty_func =
@@ -324,28 +326,23 @@ module Code_Gen : CODE_GEN = struct
    jmp cleanloop"^index^"\n
    end_cleanloop"^index^":\n"
   | ApplicTP'(op, exprs) -> 
-  let index = get_counter_s 1 in
-  (* Pushing evaluated args to stack *)
-  "push SOB_NIL_ADDRESS\n"^
-  (String.concat "\n" (List.rev_map (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
-  "push "^string_of_int(List.length exprs)^"\n"^
-  (* Evaluating op *)
-  (main_generate const_tbl fvars depth op) ^ "\n" ^
-  (* Getting the right closure from the fvar table *)
-  (* I changed it a little for the lambda opt *)
-  "CLOSURE_ENV rbx, rax\n
-   push rbx\n
-   CLOSURE_CODE rax, rax\n
-   call rax\n
-   mov rdx, [rsp+8]\n
-   add rdx, 3\n
-   cleanloop"^index^":\n
-   cmp rdx, 0\n
-   je end_cleanloop"^index^"\n
-   add rsp, 8\n
-   dec rdx\n
-   jmp cleanloop"^index^"\n
-   end_cleanloop"^index^":\n"
+      "pop rbp\n" (* Pointing to old frame *) ^    
+      "mov rbx, [rsp]\n" (* Saving old ret arg *) ^
+      "mov rdx, [rsp + 16]\n" (* Get number of old arguments *) ^
+      "add rdx, 4\n" (* Include old env and Magic, rbp and ret addr *) ^
+      "shl rdx, 3\n" ^
+      "add rsp, rdx\n" (* Running over old args *) ^
+      (* Pushing evaluated args to stack *)
+      "push SOB_NIL_ADDRESS\n"^
+      (String.concat "\n" (List.rev_map (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
+      "push "^string_of_int(List.length exprs)^"\n" (* Pushing num of args *) ^
+      (main_generate const_tbl fvars depth op) ^ "\n" (* Evaluating op *)  ^
+      "CLOSURE_ENV rdx, rax\n" ^ 
+      "push rdx\n" (* Pushing new env *) ^
+      "CLOSURE_CODE rax, rax\n" (* Getting the closure code *) ^      
+      "push rbx\n" (* Pushing the old ret arg *) ^
+      "push rbp\n" (* Pushing old rbp *) ^
+      "jmp rax"
   | _ -> raise X_not_yet_implemented;
 
   and generate_or const_tbl fvars depth expr_list =
