@@ -142,6 +142,10 @@
 	dq %2
 	db %1
 %endmacro
+
+%macro IS_PAIR 1
+	cmp byte[%1], T_PAIR
+%endmacro
 	
 ;;; Macros and routines for printing Scheme OBjects to STDOUT
 %define CHAR_NUL 0

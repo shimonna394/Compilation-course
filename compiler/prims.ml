@@ -357,32 +357,64 @@ module Prims : PRIMS = struct
       MAKE_PAIR(rax, rsi, rdi)
       pop rbp
       ret";;
-      
+     
     let apply =
     "apply:
       push rbp
       mov rbp, rsp
-      .do_loop:
-        mov rdi, PVAR(1)  ; List
-        cmp rdi, SOB_NIL_ADDRESS
-        je .end
-        CAR rax, rdi
-        CDR rdi, rdi
-        mov PVAR(1), rdi
-        push SOB_NIL_ADDRESS
+      mov rsi, PVAR(1)                  ; rsi now points to the list      
+      xor rcx, rcx                      ; Clear rcx for counting
+      push SOB_NIL_ADDRESS              ; Push magic
+      .push_args_loop:
+        CAR rax, rsi  
+        push rax                        ; push list argument
+        inc rcx                         ; increase the counter
+        CDR rsi, rsi   
+        cmp rsi, SOB_NIL_ADDRESS
+        jne .push_args_loop
+      mov rax, rsp
+      mov rbx, rbp
+      sub rbx, 16                     ; rbx now points at the first arg of the list
+      cmp rax, rbx
+      je .check_for_extra_args
+      mov rsi, [rbx]                  ; arg at the top
+      mov rdx, [rax]                  ; switch cells  
+      mov [rbx], rdx
+      mov [rax], rsi
+      add rax, 8
+      sub rbx, 8
+      .check_for_extra_args:
+        mov rax, [rbp + 24]             ; argument count
+        sub rax, 2                      ; ignore list and proc
+        jz .finish_apply
+        mov rbx, rbp
+        add rbx, 48
+      .push_extra_args:
+        push qword [rbx]    
+        add rbx, 8
+        dec rax
+        jnz .push_extra_args
+      .finish_apply:
+        mov rax, [rbp + 24]
+        sub rax, 2                      ; ignore list and proc
+        add rax, rcx
         push rax
-        push 1
-        mov rsi, PVAR(0)  ; Closure
-        CLOSURE_ENV rax, rsi
-        push rax
-        CLOSURE_CODE rax, rsi
+        mov rax, PVAR(0)        ; Closure
+        CLOSURE_ENV rbx, rax
+        push rbx
+        CLOSURE_CODE rax, rax
         call rax
-        add rsp, 32
-        jmp .do_loop 
-      .end:
+        mov rdx, [rsp + 8]
+        add rdx, 3
+      .cleanloop:
+        cmp rdx, 0
+        je .end_cleanloop;
+        add rsp, 8
+        dec rdx
+        jmp .cleanloop
+      .end_cleanloop:
         pop rbp
         ret";;
-      
 
   (* This is the interface of the module. It constructs a large x86 64-bit string using the routines
      defined above. The main compiler pipline code (in compiler.ml) calls into this module to get the
