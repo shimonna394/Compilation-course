@@ -18,10 +18,12 @@ db T_VOID
 db T_NIL
 db T_BOOL, 1
 db T_BOOL, 0
+MAKE_LITERAL_RATIONAL(3,1)
+MAKE_LITERAL_RATIONAL(4,1)
 MAKE_LITERAL_RATIONAL(1,1)
 MAKE_LITERAL_RATIONAL(2,1)
-MAKE_LITERAL_PAIR(const_tbl+23, const_tbl+1)
-MAKE_LITERAL_PAIR(const_tbl+6, const_tbl+40)
+MAKE_LITERAL_PAIR(const_tbl+57, const_tbl+1)
+MAKE_LITERAL_PAIR(const_tbl+40, const_tbl+74)
 
 ;;; These macro definitions are required for the primitive
 ;;; definitions in the epilogue to work properly
@@ -124,14 +126,118 @@ user_code_fragment:
 ;;; It will be executed immediately after the closures for 
 ;;; the primitive procedures are set up.
 push SOB_NIL_ADDRESS
-mov rax, const_tbl + 57
+mov rax, const_tbl + 91
 
 push rax
 
-mov rax, [fvar_tbl + (18 * 8)]
+mov rax, const_tbl + 23
 
 push rax
-push 2
+
+mov rax, const_tbl + 6
+
+push rax
+
+mov rbx, SOB_NIL_ADDRESS			; rbx hold the env which is empty in this situation
+MAKE_CLOSURE(rax,rbx, Lcode2)
+
+     jmp Lcont2
+Lcode2:
+push rbp
+
+     mov rbp, rsp
+
+     mov rbx, qword[rbp+3*8]			; rbx hold the number of argumnents
+
+     mov rcx, 0			; rcx hold the number of arguments that lambda opt has
+
+     cmp rbx, rcx			; if they are equal, there is no need to fix the stack
+
+     je finish_fix_stack2
+
+     mov rdx, 0
+
+     mov rdi, [rbp+((4+rbx-1)*8)]			 ; rdi hold the last parameter
+
+     MAKE_PAIR(rax, rdi, SOB_NIL_ADDRESS)			 ; make pair from the last argument
+
+     push rbx
+
+     dec rbx
+
+     start_pair_loop2:
+
+     cmp rbx, rcx
+
+     je end_pair_loop2
+     mov rdi, [rbp+((4+rbx-1)*8)]			; rdi hold the current parameter
+
+     mov rsi, rax			; save the pointer for the current pair 
+
+     MAKE_PAIR(rax, rdi, rsi)			; update the pair
+
+     dec rbx
+
+     inc rdx
+
+     jmp start_pair_loop2
+
+     end_pair_loop2:
+
+     pop rbx
+
+     mov [rbp+((4+rbx-1)*8)], rax
+
+     add rbx, 2
+
+     mov rcx, rbx
+
+     sub rcx, rdx
+
+     start_copy_stack2:
+
+     mov rax, qword[rbp+rcx*8]
+
+     mov [rbp+rbx*8], rax
+
+     dec rbx
+
+     dec rcx
+
+     cmp rcx, 0
+
+     jne start_copy_stack2
+
+     end_copy_stack2:
+
+     pop_loop2:
+
+     cmp rdx, 0
+     je end_pop_loop2
+
+     add rsp, 8
+
+     dec rdx
+
+     jmp pop_loop2
+
+     end_pop_loop2:
+
+     mov rbp, rsp
+     mov qword[rbp+24], 1
+
+     finish_fix_stack2:
+mov rax, qword[rbp+ 8*(4+0)]
+
+
+     leave
+
+     ret
+
+     Lcont2:
+
+push rax
+push 4
 mov rax, [fvar_tbl + (31 * 8)]
 
 CLOSURE_ENV rbx, rax
@@ -672,7 +778,11 @@ cons:
 apply:
       push rbp
       mov rbp, rsp
-      mov rsi, PVAR(1)                  ; rsi now points to the list      
+      mov rcx, [rbp + 24]               ; argument count
+      shl rcx, 3                        ; times 8
+      add rcx, rbp      
+      add rcx, 24      
+      mov rsi, [rcx]                    ; rsi now points to the list      
       xor rcx, rcx                      ; Clear rcx for counting
       push SOB_NIL_ADDRESS              ; Push magic
       .push_args_loop:
@@ -698,12 +808,27 @@ apply:
         sub rax, 2                      ; ignore list and proc
         jz .finish_apply
         mov rbx, rbp
-        add rbx, 48
+        add rbx, 40
       .push_extra_args:
         push qword [rbx]    
         add rbx, 8
         dec rax
         jnz .push_extra_args
+      .switch_extra_args:
+        mov rax, rsp
+        mov rbx, rcx                    ; length of the list
+        shl rbx, 3                      ; times 8
+        sub rbx, rbp                    ; rbx <- (length * 8) -rbp
+        neg rbx                         ; rbx <- rbp - (length * 8)
+        sub rbx, 16                     ; rbx now points at the first arg of the extra args
+        cmp rax, rbx                    
+        je .finish_apply
+        mov rsi, [rbx]                  ; arg at the top
+        mov rdx, [rax]                  ; switch cells  
+        mov [rbx], rdx
+        mov [rax], rsi
+        add rax, 8
+        sub rbx, 8
       .finish_apply:
         mov rax, [rbp + 24]
         sub rax, 2                      ; ignore list and proc

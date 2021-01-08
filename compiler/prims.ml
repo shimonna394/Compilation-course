@@ -362,7 +362,11 @@ module Prims : PRIMS = struct
     "apply:
       push rbp
       mov rbp, rsp
-      mov rsi, PVAR(1)                  ; rsi now points to the list      
+      mov rcx, [rbp + 24]               ; argument count
+      shl rcx, 3                        ; times 8
+      add rcx, rbp      
+      add rcx, 24      
+      mov rsi, [rcx]                    ; rsi now points to the list      
       xor rcx, rcx                      ; Clear rcx for counting
       push SOB_NIL_ADDRESS              ; Push magic
       .push_args_loop:
@@ -388,12 +392,27 @@ module Prims : PRIMS = struct
         sub rax, 2                      ; ignore list and proc
         jz .finish_apply
         mov rbx, rbp
-        add rbx, 48
+        add rbx, 40
       .push_extra_args:
         push qword [rbx]    
         add rbx, 8
         dec rax
         jnz .push_extra_args
+      .switch_extra_args:
+        mov rax, rsp
+        mov rbx, rcx                    ; length of the list
+        shl rbx, 3                      ; times 8
+        sub rbx, rbp                    ; rbx <- (length * 8) -rbp
+        neg rbx                         ; rbx <- rbp - (length * 8)
+        sub rbx, 16                     ; rbx now points at the first arg of the extra args
+        cmp rax, rbx                    
+        je .finish_apply
+        mov rsi, [rbx]                  ; arg at the top
+        mov rdx, [rax]                  ; switch cells  
+        mov [rbx], rdx
+        mov [rax], rsi
+        add rax, 8
+        sub rbx, 8
       .finish_apply:
         mov rax, [rbp + 24]
         sub rax, 2                      ; ignore list and proc

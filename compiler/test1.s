@@ -10,7 +10,7 @@ malloc_pointer:
 ;;; here we REServe enough Quad-words (64-bit "cells") for the free variables
 ;;; each free variable has 8 bytes reserved for a 64-bit pointer to its value
 fvar_tbl:
-    resq 28
+    resq 34
 
 section .data
 const_tbl:
@@ -40,7 +40,6 @@ main:
     ;; (which a is a macro for 0) so that returning
     ;; from the top level (which SHOULD NOT HAPPEN
     ;; AND IS A BUG) will cause a segfault.
-    push SOB_NIL_ADDRESS  ; magic
     push 0                ; argument count
     push SOB_NIL_ADDRESS  ; lexical environment address
     push T_UNDEFINED      ; return address
@@ -104,16 +103,28 @@ MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, denominator)
 mov [fvar_tbl + (24 * 8)], rax
 MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, gcd)
 mov [fvar_tbl + (25 * 8)], rax
+MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, car)
+mov [fvar_tbl + (26 * 8)], rax
+MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, cdr)
+mov [fvar_tbl + (27 * 8)], rax
+MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, set_car)
+mov [fvar_tbl + (28 * 8)], rax
+MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, set_cdr)
+mov [fvar_tbl + (29 * 8)], rax
+MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, cons)
+mov [fvar_tbl + (30 * 8)], rax
+MAKE_CLOSURE(rax, SOB_NIL_ADDRESS, apply)
+mov [fvar_tbl + (31 * 8)], rax
 
 user_code_fragment:
 ;;; The code you compiled will be added here.
 ;;; It will be executed immediately after the closures for 
 ;;; the primitive procedures are set up.
 mov rbx, SOB_NIL_ADDRESS			; rbx hold the env which is empty in this situation
-MAKE_CLOSURE(rax,rbx, Lcode0)
+MAKE_CLOSURE(rax,rbx, Lcode1)
 
-    jmp Lcont0
-Lcode0:
+    jmp Lcont1
+Lcode1:
 
     push rbp
 
@@ -125,59 +136,81 @@ mov rax, const_tbl + 6
 
     ret
 
-    Lcont0:
+    Lcont1:
 
-mov [fvar_tbl + 26 * 8], rax
+mov [fvar_tbl + 32 * 8], rax
 mov rax, SOB_VOID_ADDRESS
 call write_sob_if_not_void
 
 mov rbx, SOB_NIL_ADDRESS			; rbx hold the env which is empty in this situation
-MAKE_CLOSURE(rax,rbx, Lcode0)
+MAKE_CLOSURE(rax,rbx, Lcode2)
 
-    jmp Lcont0
-Lcode0:
+    jmp Lcont2
+Lcode2:
 
     push rbp
 
     mov rbp, rsp
-sub rsp, 32
+pop rbp
+mov rsi, [rsp]
+mov rdx, [rsp + 16]
+add rdx, 4
+shl rdx, 3
+add rsp, rdx
 push SOB_NIL_ADDRESS
 push 0
-CLOSURE_ENV rax, rax
+mov rax, [fvar_tbl + (32 * 8)]
 
-     push rax
-mov rax, [fvar_tbl + (26 * 8)]
-
+CLOSURE_ENV rdx, rax
+push rdx
 CLOSURE_CODE rax, rax
-
-     call rax
-add rsp, (8 * 3)
+push rsi
+jmp rax
 
     leave
 
     ret
 
-    Lcont0:
+    Lcont2:
 
-mov [fvar_tbl + 27 * 8], rax
+mov [fvar_tbl + 33 * 8], rax
 mov rax, SOB_VOID_ADDRESS
 call write_sob_if_not_void
 
 push SOB_NIL_ADDRESS
 push 0
-CLOSURE_ENV rax, rax
+mov rax, [fvar_tbl + (33 * 8)]
 
-   push rax
-mov rax, [fvar_tbl + (27 * 8)]
+CLOSURE_ENV rbx, rax
 
-CLOSURE_CODE rax, rax
+   push rbx
+
+   CLOSURE_CODE rax, rax
 
    call rax
-add rsp, (8 * 3)
+
+   mov rdx, [rsp+8]
+
+   add rdx, 3
+
+   cleanloop3:
+
+   cmp rdx, 0
+
+   je end_cleanloop3
+
+   add rsp, 8
+
+   dec rdx
+
+   jmp cleanloop3
+
+   end_cleanloop3:
+
 call write_sob_if_not_void;;; Clean up the dummy frame, set the exit status to 0 ("success"), 
    ;;; and return from main
    pop rbp
-   add rsp, 4*8
+   add rsp, 3*8
    mov rax, 0
 
    ret
@@ -193,8 +226,8 @@ boolean?:
        .true:
        mov rax, SOB_TRUE_ADDRESS
        .return:
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 flonum?:
        push rbp
@@ -208,8 +241,8 @@ flonum?:
        .true:
        mov rax, SOB_TRUE_ADDRESS
        .return:
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 rational?:
        push rbp
@@ -223,8 +256,8 @@ rational?:
        .true:
        mov rax, SOB_TRUE_ADDRESS
        .return:
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 pair?:
        push rbp
@@ -238,8 +271,8 @@ pair?:
        .true:
        mov rax, SOB_TRUE_ADDRESS
        .return:
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 null?:
        push rbp
@@ -253,8 +286,8 @@ null?:
        .true:
        mov rax, SOB_TRUE_ADDRESS
        .return:
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 char?:
        push rbp
@@ -268,8 +301,8 @@ char?:
        .true:
        mov rax, SOB_TRUE_ADDRESS
        .return:
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 string?:
        push rbp
@@ -283,8 +316,8 @@ string?:
        .true:
        mov rax, SOB_TRUE_ADDRESS
        .return:
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 symbol?:
        push rbp
@@ -298,8 +331,8 @@ symbol?:
        .true:
        mov rax, SOB_TRUE_ADDRESS
        .return:
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 procedure?:
        push rbp
@@ -313,8 +346,8 @@ procedure?:
        .true:
        mov rax, SOB_TRUE_ADDRESS
        .return:
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 div:
        push rbp
@@ -343,8 +376,8 @@ div:
          jmp mul
           MAKE_RATIONAL(rax, rsi, rcx)
           .op_return:
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 mul:
        push rbp
@@ -371,8 +404,8 @@ mul:
 	 imul rcx, rdx
           MAKE_RATIONAL(rax, rsi, rcx)
           .op_return:
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 add:
        push rbp
@@ -401,8 +434,8 @@ add:
 	 imul rcx, rdx
           MAKE_RATIONAL(rax, rsi, rcx)
           .op_return:
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 eq:
        push rbp
@@ -432,8 +465,8 @@ eq:
        .true:
        mov rax, SOB_TRUE_ADDRESS
        .return:
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 lt:
        push rbp
@@ -464,8 +497,8 @@ lt:
        .true:
        mov rax, SOB_TRUE_ADDRESS
        .return:
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 string_length:
        push rbp
@@ -473,8 +506,8 @@ string_length:
        mov rsi, PVAR(0)
 	STRING_LENGTH rsi, rsi
          MAKE_RATIONAL(rax, rsi, 1)
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 string_ref:
        push rbp
@@ -486,8 +519,8 @@ string_ref:
          add rsi, rdi
          mov sil, byte [rsi]
          MAKE_CHAR(rax, sil)
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 string_set:
        push rbp
@@ -501,8 +534,8 @@ string_set:
          CHAR_VAL rax, rdx
          mov byte [rsi], al
          mov rax, SOB_VOID_ADDRESS
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 make_string:
        push rbp
@@ -513,8 +546,8 @@ make_string:
          CHAR_VAL rdi, rdi
          and rdi, 255
          MAKE_STRING rax, rsi, dil
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 symbol_to_string:
        push rbp
@@ -546,8 +579,8 @@ symbol_to_string:
 	 mov byte [r9], bl
 	 loop .loop
          .end:
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 eq?:
        push rbp
@@ -561,8 +594,8 @@ eq?:
        .true:
        mov rax, SOB_TRUE_ADDRESS
        .return:
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 char_to_integer:
        push rbp
@@ -571,8 +604,8 @@ char_to_integer:
 	CHAR_VAL rsi, rsi
 	 and rsi, 255
 	 MAKE_RATIONAL(rax, rsi, 1)
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 integer_to_char:
        push rbp
@@ -581,8 +614,8 @@ integer_to_char:
 	NUMERATOR rsi, rsi
 	 and rsi, 255
 	 MAKE_CHAR(rax, sil)
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 exact_to_inexact:
        push rbp
@@ -595,8 +628,8 @@ exact_to_inexact:
 	 divsd xmm0, xmm1
 	 movq rsi, xmm0
 	 MAKE_FLOAT(rax, rsi)
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 numerator:
        push rbp
@@ -605,8 +638,8 @@ numerator:
 	NUMERATOR rsi, rsi
 	 mov rdi, 1
 	 MAKE_RATIONAL(rax, rsi, rdi)
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 denominator:
        push rbp
@@ -615,8 +648,8 @@ denominator:
 	DENOMINATOR rsi, rsi
 	 mov rdi, 1
 	 MAKE_RATIONAL(rax, rsi, rdi)
-         pop rbp
-         ret
+       pop rbp
+       ret
 
 gcd:
        push rbp
@@ -637,5 +670,105 @@ gcd:
        .end_loop:
 	 mov rdx, rax
          MAKE_RATIONAL(rax, rdx, 1)
-         pop rbp
-         ret
+       pop rbp
+       ret
+
+car:
+       push rbp
+       mov rbp, rsp 
+       mov rsi, PVAR(0)
+	     CAR rax, rsi
+       pop rbp
+       ret
+
+cdr:
+      push rbp
+      mov rbp, rsp 
+      mov rsi, PVAR(0)
+      CDR rax, rsi
+      pop rbp
+      ret
+
+set_car:
+      push rbp
+      mov rbp, rsp 
+      mov rsi, PVAR(0)
+      mov rdi, PVAR(1)
+      mov[rsi+TYPE_SIZE], rdi
+      pop rbp
+      ret
+
+set_cdr:
+      push rbp
+      mov rbp, rsp 
+      mov rsi, PVAR(0)
+      mov rdi, PVAR(1)
+      mov[rsi+TYPE_SIZE+WORD_SIZE], rdi
+      pop rbp
+      ret
+
+cons:
+      push rbp
+      mov rbp, rsp 
+      mov rsi, PVAR(0)
+      mov rdi, PVAR(1)
+      MAKE_PAIR(rax, rsi, rdi)
+      pop rbp
+      ret
+
+apply:
+      push rbp
+      mov rbp, rsp
+      mov rsi, PVAR(1)                  ; rsi now points to the list      
+      xor rcx, rcx                      ; Clear rcx for counting
+      push SOB_NIL_ADDRESS              ; Push magic
+      .push_args_loop:
+        CAR rax, rsi  
+        push rax                        ; push list argument
+        inc rcx                         ; increase the counter
+        CDR rsi, rsi   
+        cmp rsi, SOB_NIL_ADDRESS
+        jne .push_args_loop
+      mov rax, rsp
+      mov rbx, rbp
+      sub rbx, 16                     ; rbx now points at the first arg of the list
+      cmp rax, rbx
+      je .check_for_extra_args
+      mov rsi, [rbx]                  ; arg at the top
+      mov rdx, [rax]                  ; switch cells  
+      mov [rbx], rdx
+      mov [rax], rsi
+      add rax, 8
+      sub rbx, 8
+      .check_for_extra_args:
+        mov rax, [rbp + 24]             ; argument count
+        sub rax, 2                      ; ignore list and proc
+        jz .finish_apply
+        mov rbx, rbp
+        add rbx, 48
+      .push_extra_args:
+        push qword [rbx]    
+        add rbx, 8
+        dec rax
+        jnz .push_extra_args
+      .finish_apply:
+        mov rax, [rbp + 24]
+        sub rax, 2                      ; ignore list and proc
+        add rax, rcx
+        push rax
+        mov rax, PVAR(0)        ; Closure
+        CLOSURE_ENV rbx, rax
+        push rbx
+        CLOSURE_CODE rax, rax
+        call rax
+        mov rdx, [rsp + 8]
+        add rdx, 3
+      .cleanloop:
+        cmp rdx, 0
+        je .end_cleanloop;
+        add rsp, 8
+        dec rdx
+        jmp .cleanloop
+      .end_cleanloop:
+        pop rbp
+        ret

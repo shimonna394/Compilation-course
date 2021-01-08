@@ -1,1 +1,1 @@
-(apply + '(1 2))
+(apply (lambda x x) 3 4 '(1 2))
