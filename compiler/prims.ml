@@ -23,8 +23,8 @@ module Prims : PRIMS = struct
        push rbp
        mov rbp, rsp 
        " ^ body ^ "
-       pop rbp
-       ret";;
+         pop rbp
+         ret";;
 
   (* Many of the low-level stdlib procedures are predicate procedures, which perform 
      some kind of comparison, and then return one of the constants sob_true or sob_false.
@@ -128,7 +128,7 @@ module Prims : PRIMS = struct
        and not 64 bits.
      - `lt.flt` does not handle NaN, +inf and -inf correctly. This allows us to use `return_boolean jl` for both the
        floating-point and the fraction cases. For a fully correct implementation, `lt.flt` should make use of
-       `return_boolean jb` instead (see https://www.felixcloutier.com/x86/ucomisd for more information).
+       the `ucomisd` opcode and `return_boolean jb` instead (see https://www.felixcloutier.com/x86/ucomisd for more information).
    *)
   let numeric_ops =
     let numeric_op name flt_body rat_body body_wrapper =      
@@ -199,7 +199,9 @@ module Prims : PRIMS = struct
 	 movq xmm0, rsi
 	 FLOAT_VAL rdi, rdi
 	 movq xmm1, rdi
-	 ucomisd xmm0, xmm1", "lt";
+	 cmpltpd xmm0, xmm1
+	 movq rsi, xmm0
+	 cmp rsi, 0", "lt";
       ] in
     let comparator comp_wrapper name flt_body rat_body = numeric_op name flt_body rat_body comp_wrapper in
     (String.concat "\n\n" (List.map (fun (a, b, c) -> arith c b a (fun x -> x)) arith_map)) ^
@@ -308,135 +310,135 @@ module Prims : PRIMS = struct
       ] in
     String.concat "\n\n" (List.map (fun (a, b, c) -> (b c a)) misc_parts);;
 
-    (* adding here the functions - Shimi*)
+   (* adding here the functions - Shimi*)
 
-    let car =
-      "car:
-       push rbp
-       mov rbp, rsp 
-       mov rsi, PVAR(0)
-	     CAR rax, rsi
-       pop rbp
-       ret";;
+   let car =
+    "car:
+     push rbp
+     mov rbp, rsp 
+     mov rsi, PVAR(0)
+     CAR rax, rsi
+     pop rbp
+     ret";;
 
-    let cdr =
-     "cdr:
-      push rbp
-      mov rbp, rsp 
-      mov rsi, PVAR(0)
-      CDR rax, rsi
-      pop rbp
-      ret";;
+  let cdr =
+   "cdr:
+    push rbp
+    mov rbp, rsp 
+    mov rsi, PVAR(0)
+    CDR rax, rsi
+    pop rbp
+    ret";;
 
-    let set_car =
-     "set_car:
-      push rbp
-      mov rbp, rsp 
-      mov rsi, PVAR(0)
-      mov rdi, PVAR(1)
-      mov[rsi+TYPE_SIZE], rdi
-      pop rbp
-      ret";;
+  let set_car =
+   "set_car:
+    push rbp
+    mov rbp, rsp 
+    mov rsi, PVAR(0)
+    mov rdi, PVAR(1)
+    mov[rsi+TYPE_SIZE], rdi
+    pop rbp
+    ret";;
 
-    let set_cdr =
-     "set_cdr:
-      push rbp
-      mov rbp, rsp 
-      mov rsi, PVAR(0)
-      mov rdi, PVAR(1)
-      mov[rsi+TYPE_SIZE+WORD_SIZE], rdi
-      pop rbp
-      ret";;
+  let set_cdr =
+   "set_cdr:
+    push rbp
+    mov rbp, rsp 
+    mov rsi, PVAR(0)
+    mov rdi, PVAR(1)
+    mov[rsi+TYPE_SIZE+WORD_SIZE], rdi
+    pop rbp
+    ret";;
 
-    let cons =
-     "cons:
-      push rbp
-      mov rbp, rsp 
-      mov rsi, PVAR(0)
-      mov rdi, PVAR(1)
-      MAKE_PAIR(rax, rsi, rdi)
-      pop rbp
-      ret";;
-     
-    let apply =
-    "apply:
-      push rbp
-      mov rbp, rsp
-      mov rcx, [rbp + 24]               ; argument count
-      shl rcx, 3                        ; times 8
-      add rcx, rbp      
-      add rcx, 24      
-      mov rsi, [rcx]                    ; rsi now points to the list      
-      xor rcx, rcx                      ; Clear rcx for counting
-      push SOB_NIL_ADDRESS              ; Push magic
-      .push_args_loop:
-        CAR rax, rsi  
-        push rax                        ; push list argument
-        inc rcx                         ; increase the counter
-        CDR rsi, rsi   
-        cmp rsi, SOB_NIL_ADDRESS
-        jne .push_args_loop
-      mov rax, rsp
+  let cons =
+   "cons:
+    push rbp
+    mov rbp, rsp 
+    mov rsi, PVAR(0)
+    mov rdi, PVAR(1)
+    MAKE_PAIR(rax, rsi, rdi)
+    pop rbp
+    ret";;
+   
+  let apply =
+  "apply:
+    push rbp
+    mov rbp, rsp
+    mov rcx, [rbp + 24]               ; argument count
+    shl rcx, 3                        ; times 8
+    add rcx, rbp      
+    add rcx, 24      
+    mov rsi, [rcx]                    ; rsi now points to the list      
+    xor rcx, rcx                      ; Clear rcx for counting
+    push SOB_NIL_ADDRESS              ; Push magic
+    .push_args_loop:
+      CAR rax, rsi  
+      push rax                        ; push list argument
+      inc rcx                         ; increase the counter
+      CDR rsi, rsi   
+      cmp rsi, SOB_NIL_ADDRESS
+      jne .push_args_loop
+    mov rax, rsp
+    mov rbx, rbp
+    sub rbx, 16                     ; rbx now points at the first arg of the list
+    cmp rax, rbx
+    je .check_for_extra_args
+    mov rsi, [rbx]                  ; arg at the top
+    mov rdx, [rax]                  ; switch cells  
+    mov [rbx], rdx
+    mov [rax], rsi
+    add rax, 8
+    sub rbx, 8
+    .check_for_extra_args:
+      mov rax, [rbp + 24]             ; argument count
+      sub rax, 2                      ; ignore list and proc
+      jz .finish_apply
       mov rbx, rbp
-      sub rbx, 16                     ; rbx now points at the first arg of the list
-      cmp rax, rbx
-      je .check_for_extra_args
+      add rbx, 40
+    .push_extra_args:
+      push qword [rbx]    
+      add rbx, 8
+      dec rax
+      jnz .push_extra_args
+    .switch_extra_args:
+      mov rax, rsp
+      mov rbx, rcx                    ; length of the list
+      shl rbx, 3                      ; times 8
+      sub rbx, rbp                    ; rbx <- (length * 8) -rbp
+      neg rbx                         ; rbx <- rbp - (length * 8)
+      sub rbx, 16                     ; rbx now points at the first arg of the extra args
+      cmp rax, rbx                    
+      je .finish_apply
       mov rsi, [rbx]                  ; arg at the top
       mov rdx, [rax]                  ; switch cells  
       mov [rbx], rdx
       mov [rax], rsi
       add rax, 8
       sub rbx, 8
-      .check_for_extra_args:
-        mov rax, [rbp + 24]             ; argument count
-        sub rax, 2                      ; ignore list and proc
-        jz .finish_apply
-        mov rbx, rbp
-        add rbx, 40
-      .push_extra_args:
-        push qword [rbx]    
-        add rbx, 8
-        dec rax
-        jnz .push_extra_args
-      .switch_extra_args:
-        mov rax, rsp
-        mov rbx, rcx                    ; length of the list
-        shl rbx, 3                      ; times 8
-        sub rbx, rbp                    ; rbx <- (length * 8) -rbp
-        neg rbx                         ; rbx <- rbp - (length * 8)
-        sub rbx, 16                     ; rbx now points at the first arg of the extra args
-        cmp rax, rbx                    
-        je .finish_apply
-        mov rsi, [rbx]                  ; arg at the top
-        mov rdx, [rax]                  ; switch cells  
-        mov [rbx], rdx
-        mov [rax], rsi
-        add rax, 8
-        sub rbx, 8
-      .finish_apply:
-        mov rax, [rbp + 24]
-        sub rax, 2                      ; ignore list and proc
-        add rax, rcx
-        push rax
-        mov rax, PVAR(0)        ; Closure
-        CLOSURE_ENV rbx, rax
-        push rbx
-        CLOSURE_CODE rax, rax
-        call rax
-        mov rdx, [rsp + 8]
-        add rdx, 3
-      .cleanloop:
-        cmp rdx, 0
-        je .end_cleanloop;
-        add rsp, 8
-        dec rdx
-        jmp .cleanloop
-      .end_cleanloop:
-        pop rbp
-        ret";;
+    .finish_apply:
+      mov rax, [rbp + 24]
+      sub rax, 2                      ; ignore list and proc
+      add rax, rcx
+      push rax
+      mov rax, PVAR(0)        ; Closure
+      CLOSURE_ENV rbx, rax
+      push rbx
+      CLOSURE_CODE rax, rax
+      call rax
+      mov rdx, [rsp + 8]
+      add rdx, 3
+    .cleanloop:
+      cmp rdx, 0
+      je .end_cleanloop;
+      add rsp, 8
+      dec rdx
+      jmp .cleanloop
+    .end_cleanloop:
+      pop rbp
+      ret";;
 
-  (* This is the interface of the module. It constructs a large x86 64-bit string using the routines
-     defined above. The main compiler pipline code (in compiler.ml) calls into this module to get the
-     string of primitive procedures. *)
-  let procs = String.concat "\n\n" [type_queries ; numeric_ops; misc_ops; car; cdr; set_car; set_cdr; cons; apply];;
+(* This is the interface of the module. It constructs a large x86 64-bit string using the routines
+   defined above. The main compiler pipline code (in compiler.ml) calls into this module to get the
+   string of primitive procedures. *)
+let procs = String.concat "\n\n" [type_queries ; numeric_ops; misc_ops; car; cdr; set_car; set_cdr; cons; apply];;
 end;;

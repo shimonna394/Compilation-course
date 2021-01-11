@@ -51,8 +51,8 @@ module Code_Gen : CODE_GEN = struct
       (* Additional rational numebr ops *)
       "numerator", "numerator"; "denominator", "denominator"; "gcd", "gcd";
       (* you can add yours here *)
-      "car", "car"; "cdr", "cdr";"set_car", "set_car";"set_cdr", "set_cdr";
-      "cons", "cons"; "apply", "apply";
+      "car", "car"; "cdr", "cdr";"set-car!", "set_car";"set-cdr!", "set_cdr";
+      "cons", "cons"; "apply", "apply"; 
     ] 
 
   let empty_func =
@@ -160,22 +160,22 @@ module Code_Gen : CODE_GEN = struct
     
     let make_cosnt_sexp sexp = 
       (match sexp with
-      | (Sexpr(Number(Fraction(x,y))),false) -> (let x = final_list := List.append !final_list [(Sexpr(Number(Fraction(x,y))),(!offset,"MAKE_LITERAL_RATIONAL"^sexp_to_string (Number(Fraction(x,y)))^""))] in
+      | (Sexpr(Number(Fraction(x,y))),false) -> (let x = final_list := List.append !final_list [(Sexpr(Number(Fraction(x,y))),(!offset,"MAKE_LITERAL_RATIONAL "^sexp_to_string (Number(Fraction(x,y)))^""))] in
       let add_to_offset = offset := !offset + 17 in
       empty_func [x,add_to_offset])
-      | (Sexpr(Number(Float(num))),false) -> (let x = final_list := List.append !final_list [(Sexpr(Number(Float(num))),(!offset,"MAKE_LITERAL_FLOAT"^sexp_to_string (Number(Float(num)))^""))] in
+      | (Sexpr(Number(Float(num))),false) -> (let x = final_list := List.append !final_list [(Sexpr(Number(Float(num))),(!offset,"MAKE_LITERAL_FLOAT "^sexp_to_string (Number(Float(num)))^""))] in
       let add_to_offset = offset := !offset + 9 in
       empty_func [x,add_to_offset])
-      | (Sexpr(Char(ch)),false) -> (let x = final_list := List.append !final_list [(Sexpr(Char(ch)),(!offset,"MAKE_LITERAL_CHAR"^sexp_to_string (Char(ch))^""))] in
+      | (Sexpr(Char(ch)),false) -> (let x = final_list := List.append !final_list [(Sexpr(Char(ch)),(!offset,"MAKE_LITERAL_CHAR "^sexp_to_string (Char(ch))^""))] in
       let add_to_offset = offset := !offset + 2 in
       empty_func [x,add_to_offset])
       | (Sexpr(String(str)),false) -> (let x = final_list := List.append !final_list [(Sexpr(String(str)),(!offset,"MAKE_LITERAL_STRING \""^str^"\", "^string_of_int(String.length str)^""))] in
       let add_to_offset = offset := !offset + 9 + (String.length str) in
       empty_func [x,add_to_offset])
-      | (Sexpr(Symbol(str)),false) -> (let x = final_list := List.append !final_list [(Sexpr(Symbol(str)),(!offset,"MAKE_LITERAL_SYMBOL(const_tbl+"^string_of_int (get_index_from_table !final_list (String(str)))^")"))] in
+      | (Sexpr(Symbol(str)),false) -> (let x = final_list := List.append !final_list [(Sexpr(Symbol(str)),(!offset,"MAKE_LITERAL_SYMBOL const_tbl+ "^string_of_int (get_index_from_table !final_list (String(str)))^""))] in
       let add_to_offset = offset := !offset + 9 in
       empty_func [x,add_to_offset])
-      | (Sexpr(Pair(x,y)),false) -> (let x = final_list := List.append !final_list [(Sexpr(Pair(x,y)),(!offset,"MAKE_LITERAL_PAIR(const_tbl+"^string_of_int (get_index_from_table !final_list x)^", const_tbl+"^string_of_int (get_index_from_table !final_list y)^")"))] in
+      | (Sexpr(Pair(x,y)),false) -> (let x = final_list := List.append !final_list [(Sexpr(Pair(x,y)),(!offset,"MAKE_LITERAL_PAIR(const_tbl+ "^string_of_int (get_index_from_table !final_list x)^", const_tbl+ "^string_of_int (get_index_from_table !final_list y)^")"))] in
       let add_to_offset = offset := !offset + 17 in
       empty_func [x,add_to_offset])
       | _ -> ());;
@@ -254,7 +254,7 @@ module Code_Gen : CODE_GEN = struct
   | Box'(var) -> (main_generate const_tbl fvars depth (Var'(var)))^
     "push rax\n
      MALLOC rax, 8\n
-     pop qword [rax]\n"
+     pop qword[rax]\n"
   | BoxGet'(var) -> (main_generate const_tbl fvars depth (Var'(var)))^
     "mov rax, qword[rax]\n" 
   | BoxSet'(var, expr) -> (main_generate const_tbl fvars depth expr)^
@@ -262,7 +262,7 @@ module Code_Gen : CODE_GEN = struct
     (main_generate const_tbl fvars  depth (Var'(var)))^
     "pop qword[rax]\n"^
     "mov rax, SOB_VOID_ADDRESS\n"
-  | Or'(expr_list) -> generate_or const_tbl fvars depth expr_list
+  | Or'(expr_list) -> generate_or const_tbl fvars depth expr_list (get_counter_s 1)
   | If'(test, dit, dif) -> 
     let else_label = "Lelse"^ get_counter_s 1
     and exit_label = "Lexit" ^ get_counter_s 1 in
@@ -307,7 +307,7 @@ module Code_Gen : CODE_GEN = struct
   (* Pushing evaluated args to stack *)
   "push SOB_NIL_ADDRESS\n"^
   (String.concat "\n" (List.rev_map (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
-  "push " ^ string_of_int(List.length exprs) ^ "\n" ^
+  "push "^string_of_int(List.length exprs)^"\n"^
   (* Evaluating op *)
   (main_generate const_tbl fvars depth op) ^ "\n" ^
   (* Getting the right closure from the fvar table *)
@@ -323,8 +323,8 @@ module Code_Gen : CODE_GEN = struct
    je end_cleanloop"^index^"\n
    add rsp, 8\n
    dec rdx\n
-   jmp cleanloop" ^ index ^ "\n
-   end_cleanloop" ^ index ^ ":\n"
+   jmp cleanloop"^index^"\n
+   end_cleanloop"^index^":\n"
   | ApplicTP'(op, exprs) -> 
     "pop rbp\n" (* Pointing to old frame *) ^    
     "mov rsi, [rsp]\n" (* Saving old ret arg *) ^
@@ -341,16 +341,47 @@ module Code_Gen : CODE_GEN = struct
     "push rdx\n" (* Pushing new env *) ^
     "CLOSURE_CODE rax, rax\n" (* Getting the closure code *) ^      
     "push rsi\n" (* Pushing the old ret arg *) ^
-    "jmp rax"
+    "jmp rax\n"
+  (* let index = get_counter_s 1 in
+  "push SOB_NIL_ADDRESS\n"^
+  (String.concat "\n" (List.rev_map (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
+  "push "^string_of_int(List.length exprs)^"\n"^
+  (* Evaluating op *)
+  (main_generate const_tbl fvars depth op) ^ "\n" ^
+  (* Getting the right closure from the fvar table *)
+  (* I changed it a little for the lambda opt *)
+  "CLOSURE_ENV rbx, rax\n
+   push rbx\n
+   CLOSURE_CODE rax, rax\n
+   push qword[rbp+8]\n
+   mov rcx, qword[rsp+16] ; rcx is the pointer to the new frame\n
+   add rcx, 3
+   mov rdx, qword[rbp+24] ; rdx is the pointer to the old frame\n
+   add rdx, 4
+   mov rbx, rcx\n
+   add rbx, rdx\n
+   copy_stack_tp"^index^":\n
+   cmp rcx, 0\n
+   je end_stack_tp"^index^"\n
+   mov rdi, qword[rsp+((rcx-1)*8)]\n
+   mov [rbp+((rdx-1)*8)], rdi\n
+   dec rcx\n
+   dec rdx\n
+   dec rbx\n
+   jmp copy_stack_tp"^index^"\n
+   end_stack_tp"^index^":\n
+   mov rsp, rbp\n
+   shl rdx, 3\n
+   add rsp, rdx
+   jmp rax\n" *)
   | _ -> raise X_not_yet_implemented;
 
-  and generate_or const_tbl fvars depth expr_list =
-    let index = get_counter_s 1 in
+  and generate_or const_tbl fvars depth expr_list index =
       (match expr_list with
-    | [] -> "Lexit"^index^":\n"
-    | expr :: [] -> (main_generate const_tbl fvars depth expr)^"Lexit"^index^":\n"
-    | expr :: exprs -> (main_generate const_tbl fvars depth expr)^ "cmp rax, SOB_FALSE_ADDRESS\n jne Lexit"^index^"\n"^
-    (generate_or const_tbl fvars depth exprs));
+    | [] -> "Lexit_or"^index^":\n"
+    | expr :: [] -> (main_generate const_tbl fvars depth expr)^"Lexit_or"^index^":\n"
+    | expr :: exprs -> (main_generate const_tbl fvars depth expr)^ "cmp rax, SOB_FALSE_ADDRESS\n jne Lexit_or"^index^"\n"^
+    (generate_or const_tbl fvars depth exprs index));
 
   and make_ext_env depth index =
    (if depth = 0
@@ -436,6 +467,8 @@ module Code_Gen : CODE_GEN = struct
      cmp rcx, 0\n
      jne start_copy_stack"^index^"\n
      end_copy_stack"^index^":\n
+     mov rax, qword[rbp+rcx*8]\n
+     mov [rbp+rbx*8], rax\n
      pop_loop"^index^":\n
      cmp rdx, 0
      je end_pop_loop"^index^"\n

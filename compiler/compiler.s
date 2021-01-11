@@ -143,8 +143,19 @@
 	db %1
 %endmacro
 
-%macro IS_PAIR 1
-	cmp byte[%1], T_PAIR
+%macro MAKE_LITERAL_SYMBOL 1
+	db T_SYMBOL
+	dq %1
+%endmacro
+
+%macro MAKE_LITERAL_CHAR 1
+	db T_CHAR
+	db %1
+%endmacro
+
+%macro MAKE_LITERAL_FLOAT 1
+	db T_FLOAT
+	dq %1
 %endmacro
 	
 ;;; Macros and routines for printing Scheme OBjects to STDOUT

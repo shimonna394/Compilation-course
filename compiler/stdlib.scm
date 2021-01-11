@@ -18,6 +18,7 @@
     (lambda (f . args)
       (map-many f args)))))
 
+
 (define fold-left 
   (lambda (func acc lst)
    (if (null? lst)
@@ -38,7 +39,6 @@
     (car lst)
 	(let ((reversed_list (reverse_list '() lst)))
 	 (fold-right cons (car reversed_list) (reverse_list '() (cdr reversed_list))))))))
-	  
 
 (define append
   (let ((null? null?)
@@ -189,14 +189,13 @@
 		 ((and (flonum? x) (flonum? y)) (= x y))
 		 ((and (char? x) (char? y)) (= (char->integer x) (char->integer y)))
 		 ((and (pair? x) (pair? y))
-		  (equal?-loop (car x) (car y)) (equal?-loop (cdr x) (cdr y)))
+		  (and (equal?-loop (car x) (car y)) (equal?-loop (cdr x) (cdr y))))
 		 ((and (string? x) (string? y)) (equal?-loop (string->list x) (string->list y)))
 		 (else (eq? x y))))))
     equal?-loop)))
-
 
 (define reverse_list
  (lambda (reverse_lst temp_lst)
   (if (eq? temp_lst '())
    reverse_lst
-   (reverse_list (cons (car temp_lst) reverse_lst) (cdr temp_lst)))))	
+   (reverse_list (cons (car temp_lst) reverse_lst) (cdr temp_lst)))))
