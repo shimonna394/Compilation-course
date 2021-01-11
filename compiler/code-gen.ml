@@ -326,31 +326,15 @@ module Code_Gen : CODE_GEN = struct
    jmp cleanloop"^index^"\n
    end_cleanloop"^index^":\n"
   | ApplicTP'(op, exprs) -> 
-    "pop rbp\n" (* Pointing to old frame *) ^    
-    "mov rsi, [rsp]\n" (* Saving old ret arg *) ^
-    "mov rdx, [rsp + 16]\n" (* Get number of old arguments *) ^
-    "add rdx, 4\n" (* Include old env and Magic, rbp and ret addr *) ^
-    "shl rdx, 3\n" ^
-    "add rsp, rdx\n" (* Running over old args *) ^
-    (* Pushing evaluated args to stack *)
-    "push SOB_NIL_ADDRESS\n" ^
-    (String.concat "\n" (List.rev_map (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
-    "push " ^ string_of_int(List.length exprs) ^ "\n" (* Pushing num of args *) ^
-    (main_generate const_tbl fvars depth op) ^ "\n" (* Evaluating op *)  ^
-    "CLOSURE_ENV rdx, rax\n" ^ 
-    "push rdx\n" (* Pushing new env *) ^
-    "CLOSURE_CODE rax, rax\n" (* Getting the closure code *) ^      
-    "push rsi\n" (* Pushing the old ret arg *) ^
-    "jmp rax\n"
-  (* let index = get_counter_s 1 in
-  "push SOB_NIL_ADDRESS\n"^
+  let index = get_counter_s 1 in
+ "push SOB_NIL_ADDRESS\n"^
   (String.concat "\n" (List.rev_map (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
   "push "^string_of_int(List.length exprs)^"\n"^
   (* Evaluating op *)
   (main_generate const_tbl fvars depth op) ^ "\n" ^
   (* Getting the right closure from the fvar table *)
   (* I changed it a little for the lambda opt *)
-  "CLOSURE_ENV rbx, rax\n
+   "CLOSURE_ENV rbx, rax\n
    push rbx\n
    CLOSURE_CODE rax, rax\n
    push qword[rbp+8]\n
@@ -358,22 +342,23 @@ module Code_Gen : CODE_GEN = struct
    add rcx, 3
    mov rdx, qword[rbp+24] ; rdx is the pointer to the old frame\n
    add rdx, 4
-   mov rbx, rcx\n
-   add rbx, rdx\n
+   mov rbx, qword[rbp]
    copy_stack_tp"^index^":\n
    cmp rcx, 0\n
    je end_stack_tp"^index^"\n
-   mov rdi, qword[rsp+((rcx-1)*8)]\n
-   mov [rbp+((rdx-1)*8)], rdi\n
+   mov rdi, qword[rsp+((rcx)*8)]\n
+   mov [rbp+((rdx)*8)], rdi\n
    dec rcx\n
    dec rdx\n
-   dec rbx\n
    jmp copy_stack_tp"^index^"\n
    end_stack_tp"^index^":\n
+   mov rdi, qword[rsp+((rcx)*8)]\n
+   mov [rbp+((rdx)*8)], rdi\n
    mov rsp, rbp\n
    shl rdx, 3\n
    add rsp, rdx
-   jmp rax\n" *)
+   mov rbp, rbx
+   jmp rax\n" 
   | _ -> raise X_not_yet_implemented;
 
   and generate_or const_tbl fvars depth expr_list index =
