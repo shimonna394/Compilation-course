@@ -195,8 +195,8 @@ module Code_Gen : CODE_GEN = struct
       let empty_all = empty_func [first_step, second_step, third_step, clean, clean2, clean3, clean4] in
       take_second empty_all ans;; 
   
-       (* end of const tables *)
-         (* Sharon *)
+       (* free vars table *)
+       
   let rec append_if_not_exists_expended name acc table =
     match acc with 
     | [] -> table @ [(name, (List.length table))]
@@ -252,8 +252,8 @@ module Code_Gen : CODE_GEN = struct
   | Const'(Sexpr(sexp)) -> "mov rax, const_tbl + "^string_of_int (get_index_from_table const_tbl sexp)^"\n"
   | Const'(Void) -> "mov rax, const_tbl + 0\n"
   | Box'(var) -> (main_generate const_tbl fvars depth (Var'(var)))^
-    "push rax\n
-     MALLOC rax, 8\n
+    "push rax
+     MALLOC rax, 8
      pop qword[rax]\n"
   | BoxGet'(var) -> (main_generate const_tbl fvars depth (Var'(var)))^
     "mov rax, qword[rax]\n" 
@@ -277,87 +277,85 @@ module Code_Gen : CODE_GEN = struct
   | Def'(VarFree(name), value) -> 
     (main_generate const_tbl fvars depth value) ^ "\n" ^
     "mov [fvar_tbl + " ^ (get_index_of_free_var name fvars) ^ " * 8], rax\n" ^
-    "mov rax, SOB_VOID_ADDRESS"
+    "mov rax, SOB_VOID_ADDRESS\n"
   | Set'(VarFree(name), value) -> 
     (main_generate const_tbl fvars depth value) ^ "\n" ^
     "mov [fvar_tbl + " ^ (get_index_of_free_var name fvars) ^ " * 8], rax\n" ^
-    "mov rax, SOB_VOID_ADDRESS"
+    "mov rax, SOB_VOID_ADDRESS\n"
   | Set'(VarParam(name, minor), value) ->  
     (main_generate const_tbl fvars depth value) ^
-    "mov qword[rbp+8*(4+"^string_of_int(minor)^")], rax\n
-     mov rax, SOB_VOID_ADDRESS"
+    "mov qword[rbp+8*(4+"^string_of_int(minor)^")], rax
+     mov rax, SOB_VOID_ADDRESS\n"
   | Set'(VarBound(name, minor, major), value) ->
     (main_generate const_tbl fvars depth value) ^
-    "mov rbx, qword[rbp+(8*2)]\n
-     mov rbx, qword[rbx+(8*"^string_of_int(major)^")]\n
-     mov qword[rbx+(8*"^string_of_int(minor)^")], rax\n
-     mov rax, SOB_VOID_ADDRESS"
+    "mov rbx, qword[rbp+(8*2)]
+     mov rbx, qword[rbx+(8*"^string_of_int(major)^")]
+     mov qword[rbx+(8*"^string_of_int(minor)^")], rax
+     mov rax, SOB_VOID_ADDRESS\n"
   | Var'(VarFree(name)) -> 
     "mov rax, [fvar_tbl + (" ^ (get_index_of_free_var name fvars) ^ " * 8)]\n"
   | Var'(VarParam(_,minor)) ->
     "mov rax, qword[rbp+ 8*(4+"^string_of_int(minor)^")]\n"
   | Var'(VarBound(_,major,minor)) ->
-    "mov rax, qword[rbp+8*2]\n
-     mov rax, qword[rax+(8*"^string_of_int(major)^")]\n
+    "mov rax, qword[rbp+8*2]
+     mov rax, qword[rax+(8*"^string_of_int(major)^")]
      mov rax, qword[rax+(8*"^string_of_int(minor)^")]\n"  
   | LambdaSimple'(args, body) -> generate_lambda_simple const_tbl fvars depth body
   | LambdaOpt'(args, opt, body) -> generate_lambda_opt const_tbl fvars depth (List.length args) body  
   | Applic'(op, exprs) -> 
   let index = get_counter_s 1 in
   (* Pushing evaluated args to stack *)
-  "push SOB_NIL_ADDRESS\n"^
+  "push SOB_NIL_ADDRESS ; push the magic\n"^
   (String.concat "\n" (List.rev_map (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
   "push "^string_of_int(List.length exprs)^"\n"^
   (* Evaluating op *)
   (main_generate const_tbl fvars depth op) ^ "\n" ^
   (* Getting the right closure from the fvar table *)
-  (* I changed it a little for the lambda opt *)
-  "CLOSURE_ENV rbx, rax\n
-   push rbx\n
-   CLOSURE_CODE rax, rax\n
-   call rax\n
-   mov rdx, [rsp+8]\n
-   add rdx, 3\n
-   cleanloop"^index^":\n
-   cmp rdx, 0\n
-   je end_cleanloop"^index^"\n
-   add rsp, 8\n
-   dec rdx\n
-   jmp cleanloop"^index^"\n
+  "CLOSURE_ENV rbx, rax ; get the env from the closure
+   push rbx ; push the env
+   CLOSURE_CODE rax, rax ;  get the code
+   call rax
+   mov rdx, [rsp+8] ; get the number of arguments
+   add rdx, 3 ; add the magic, num of args, env
+   cleanloop"^index^": ; clean the stack
+   cmp rdx, 0
+   je end_cleanloop"^index^"
+   add rsp, 8
+   dec rdx
+   jmp cleanloop"^index^"
    end_cleanloop"^index^":\n"
   | ApplicTP'(op, exprs) -> 
   let index = get_counter_s 1 in
- "push SOB_NIL_ADDRESS\n"^
+ "push SOB_NIL_ADDRESS ; push the magic\n"^
   (String.concat "\n" (List.rev_map (fun exp -> (main_generate const_tbl fvars depth exp) ^ "\npush rax\n") exprs)) ^
   "push "^string_of_int(List.length exprs)^"\n"^
   (* Evaluating op *)
   (main_generate const_tbl fvars depth op) ^ "\n" ^
   (* Getting the right closure from the fvar table *)
-  (* I changed it a little for the lambda opt *)
-   "CLOSURE_ENV rbx, rax\n
-   push rbx\n
-   CLOSURE_CODE rax, rax\n
-   push qword[rbp+8]\n
-   mov rcx, qword[rsp+16] ; rcx is the pointer to the new frame\n
-   add rcx, 3
-   mov rdx, qword[rbp+24] ; rdx is the pointer to the old frame\n
-   add rdx, 4
-   mov rbx, qword[rbp]
-   copy_stack_tp"^index^":\n
-   cmp rcx, 0\n
-   je end_stack_tp"^index^"\n
-   mov rdi, qword[rsp+((rcx)*8)]\n
-   mov [rbp+((rdx)*8)], rdi\n
-   dec rcx\n
-   dec rdx\n
-   jmp copy_stack_tp"^index^"\n
-   end_stack_tp"^index^":\n
-   mov rdi, qword[rsp+((rcx)*8)]\n
-   mov [rbp+((rdx)*8)], rdi\n
-   mov rsp, rbp\n
-   shl rdx, 3\n
-   add rsp, rdx
-   mov rbp, rbx
+   "CLOSURE_ENV rbx, rax ; get the env from the closure
+   push rbx ; push the env
+   CLOSURE_CODE rax, rax ;  get the code
+   push qword[rbp+8] ; push the old ret address
+   mov rcx, qword[rsp+16] ; rcx has the number of arguments of the new frame
+   add rcx, 3 ; add the ret, env, num of args
+   mov rdx, qword[rbp+24] ; rdx has the number of arguments of the old frame
+   add rdx, 4 ; add the rbp, ret, env, num of args
+   mov rbx, qword[rbp] ; save the old rbp
+   copy_stack_tp"^index^": ; loop for fix the stack
+   cmp rcx, 0
+   je end_stack_tp"^index^"
+   mov rdi, qword[rsp+((rcx)*8)]
+   mov [rbp+((rdx)*8)], rdi
+   dec rcx
+   dec rdx
+   jmp copy_stack_tp"^index^"
+   end_stack_tp"^index^":
+   mov rdi, qword[rsp+((rcx)*8)]
+   mov [rbp+((rdx)*8)], rdi
+   mov rsp, rbp
+   shl rdx, 3
+   add rsp, rdx ; cleaninng the stack
+   mov rbp, rbx ; restore the old rbp
    jmp rax\n" 
   | _ -> raise X_not_yet_implemented;
 
@@ -365,52 +363,54 @@ module Code_Gen : CODE_GEN = struct
       (match expr_list with
     | [] -> "Lexit_or"^index^":\n"
     | expr :: [] -> (main_generate const_tbl fvars depth expr)^"Lexit_or"^index^":\n"
-    | expr :: exprs -> (main_generate const_tbl fvars depth expr)^ "cmp rax, SOB_FALSE_ADDRESS\n jne Lexit_or"^index^"\n"^
+    | expr :: exprs -> (main_generate const_tbl fvars depth expr)^ 
+    "cmp rax, SOB_FALSE_ADDRESS 
+     jne Lexit_or"^index^"\n"^
     (generate_or const_tbl fvars depth exprs index));
 
   and make_ext_env depth index =
    (if depth = 0
-   then "mov rbx, SOB_NIL_ADDRESS\t\t\t; rbx hold the env which is empty in this situation\n"
-   else "mov rcx, qword[rbp+8*3]\t\t\t; rcx hold the number of the arguments in the stack\n
-   lea rcx, [(rcx+1)*8]\t\t\t; rcx hold now the number of bytes that sholuld be allocated for extenv[0]\n
-   MALLOC rax, rcx\t\t\t; rax hold the pointer to extenv[0]\n
-   mov rcx, qword[rbp+8*3]\t\t\t; rcx hold now the number of bytes that sholuld be allocated for extenv[0]\n
-   mov rdx, 0\t\t\t; rdx is the index to iterate the arguments in the stack\n
-   start_copy_loop"^index^":\n
-   cmp rdx, rcx\t\t\t; check if the loop should be finished\n
-   je end_loop"^index^"\n
-   mov rbx, [rbp+8*(4+rdx)]\t\t\t; rbx hold the argumnet in the stack according to rdx index\n
-   mov [rax+8*rdx], rbx\t\t\t; put the argument from the stack in the extenv[0]\n
-   inc rdx\t\t\t; inc the index of rdx\n
-   jmp  start_copy_loop"^index^"\n
-   end_loop"^index^":\n
-   mov qword[rax+8*rdx], SOB_NIL_ADDRESS\t\t\t; adding the magic\n
-   MALLOC rbx, "^string_of_int((depth+1)*8)^"\t\t\t; allocate bytes for extenv\n
-   mov [rbx], rax\t\t\t; extenv[0] = rax\n
-   mov rax, qword[rbp+8*2]\t\t\t; rax = old env\n 
-   mov rdx, 0\t\t\t; rdx = index for the loop\n
-   mov rcx, "^string_of_int(depth)^"\t\t\t; number of elements in old env\n
-   start_env_loop"^index^":\n
-   cmp rdx, rcx \t\t\t; check if the loop should be finished\n
-   je end_env_loop"^index^"\n
-   mov rdi, [rax+rdx*8]\t\t\t; rdi hold the pointer to oldenv[rdx]\n
-   mov[rbx+8+(rdx*8)], rdi\t\t\t; extenv[rdx+1]=oldenv[rdx]\n
-   inc rdx\t\t\t; inc the index of rdx\n
-   jmp start_env_loop"^index^"\n
+   then "mov rbx, SOB_NIL_ADDRESS ; rbx hold the env which is empty in this situation\n"
+   else "mov rcx, qword[rbp+8*3] ; rcx hold the number of the arguments in the stack
+   lea rcx, [(rcx+1)*8] ; rcx hold now the number of bytes that sholuld be allocated for extenv[0]
+   MALLOC rax, rcx ; rax hold the pointer to extenv[0]
+   mov rcx, qword[rbp+8*3] ; rcx hold now the number of bytes that sholuld be allocated for extenv[0]
+   mov rdx, 0 ; rdx is the index to iterate the arguments in the stack
+   start_copy_loop"^index^":
+   cmp rdx, rcx ; check if the loop should be finished
+   je end_loop"^index^"
+   mov rbx, [rbp+8*(4+rdx)] ; rbx hold the argumnet in the stack according to rdx index
+   mov [rax+8*rdx], rbx ; put the argument from the stack in the extenv[0]
+   inc rdx ; inc the index of rdx
+   jmp  start_copy_loop"^index^"
+   end_loop"^index^":
+   mov qword[rax+8*rdx], SOB_NIL_ADDRESS ; adding the magic
+   MALLOC rbx, "^string_of_int((depth+1)*8)^" ; allocate bytes for extenv
+   mov [rbx], rax ; extenv[0] = rax
+   mov rax, qword[rbp+8*2] ; rax = old env 
+   mov rdx, 0 ; rdx = index for the loop
+   mov rcx, "^string_of_int(depth)^" ; number of elements in old env
+   start_env_loop"^index^":
+   cmp rdx, rcx ; check if the loop should be finished
+   je end_env_loop"^index^"
+   mov rdi, [rax+rdx*8] ; rdi hold the pointer to oldenv[rdx]
+   mov[rbx+8+(rdx*8)], rdi ; extenv[rdx+1]=oldenv[rdx]
+   inc rdx ; inc the index of rdx
+   jmp start_env_loop"^index^"
    end_env_loop"^index^":\n");  
 
   and generate_lambda_simple const_tbl fvars depth body = 
    let index = get_counter_s 1 in
    let ext_env = make_ext_env depth index in
-   let l_code = "Lcode"^index^":\n
-    push rbp\n
+   let l_code = "Lcode"^index^":
+    push rbp
     mov rbp, rsp\n"^
-    (main_generate const_tbl fvars (depth+1) body)^"\n
-    leave\n
-    ret\n
+    (main_generate const_tbl fvars (depth+1) body)^"
+    leave
+    ret
     Lcont"^index^":\n" in
     ext_env^
-    "MAKE_CLOSURE(rax,rbx, Lcode"^index^")\n
+    "MAKE_CLOSURE(rax,rbx, Lcode"^index^")
     jmp Lcont"^index^"\n"^
     l_code;
 
@@ -418,60 +418,60 @@ module Code_Gen : CODE_GEN = struct
    let index = get_counter_s 1 in
    let ext_env = make_ext_env depth index in
    let fix_stack = 
-    "push rbp\n
-     mov rbp, rsp\n
-     mov rbx, qword[rbp+3*8]\t\t\t; rbx hold the number of argumnents\n
-     mov rcx, "^string_of_int(num_of_args)^"\t\t\t; rcx hold the number of arguments that lambda opt has\n
-     cmp rbx, rcx\t\t\t; if they are equal, there is no need to fix the stack\n
-     je finish_fix_stack"^index^"\n
-     mov rdx, 0\n
-     mov rdi, [rbp+((4+rbx-1)*8)]\t\t\t ; rdi hold the last parameter\n
-     MAKE_PAIR(rax, rdi, SOB_NIL_ADDRESS)\t\t\t ; make pair from the last argument\n
-     push rbx\n
-     dec rbx\n
-     start_pair_loop"^index^":\n
-     cmp rbx, rcx\n
-     je end_pair_loop"^index^"
-     mov rdi, [rbp+((4+rbx-1)*8)]\t\t\t; rdi hold the current parameter\n
-     mov rsi, rax\t\t\t; save the pointer for the current pair \n
-     MAKE_PAIR(rax, rdi, rsi)\t\t\t; update the pair\n
-     dec rbx\n
-     inc rdx\n
-     jmp start_pair_loop"^index^"\n
-     end_pair_loop"^index^":\n
-     pop rbx\n
-     mov [rbp+((4+rbx-1)*8)], rax\n
-     add rbx, 2\n
-     mov rcx, rbx\n
-     sub rcx, rdx\n
-     start_copy_stack"^index^":\n
-     mov rax, qword[rbp+rcx*8]\n
-     mov [rbp+rbx*8], rax\n
-     dec rbx\n
-     dec rcx\n
-     cmp rcx, 0\n
-     jne start_copy_stack"^index^"\n
-     end_copy_stack"^index^":\n
-     mov rax, qword[rbp+rcx*8]\n
-     mov [rbp+rbx*8], rax\n
-     pop_loop"^index^":\n
-     cmp rdx, 0
-     je end_pop_loop"^index^"\n
-     add rsp, 8\n
-     dec rdx\n
-     jmp pop_loop"^index^"\n
-     end_pop_loop"^index^":\n
+    "push rbp
      mov rbp, rsp
-     mov qword[rbp+24], "^string_of_int(num_of_args+1)^"\n
+     mov rbx, qword[rbp+3*8] ; rbx hold the number of argumnents
+     mov rcx, "^string_of_int(num_of_args)^" ; rcx hold the number of arguments that lambda opt has
+     cmp rbx, rcx ; if they are equal, there is no need to fix the stack
+     je finish_fix_stack"^index^"
+     mov rdx, 0
+     mov rdi, [rbp+((4+rbx-1)*8)] ; rdi hold the last parameter
+     MAKE_PAIR(rax, rdi, SOB_NIL_ADDRESS) ; make pair from the last argument
+     push rbx
+     dec rbx
+     start_pair_loop"^index^": ; making a list for the opt parameter
+     cmp rbx, rcx
+     je end_pair_loop"^index^"
+     mov rdi, [rbp+((4+rbx-1)*8)] ; rdi hold the current parameter
+     mov rsi, rax ; save the pointer for the current pair 
+     MAKE_PAIR(rax, rdi, rsi) ; update the pair
+     dec rbx
+     inc rdx
+     jmp start_pair_loop"^index^"
+     end_pair_loop"^index^":
+     pop rbx
+     mov [rbp+((4+rbx-1)*8)], rax ; put the list for lambda opt parameter in the stack
+     add rbx, 2
+     mov rcx, rbx
+     sub rcx, rdx
+     start_copy_stack"^index^": ; loop for copy the stack
+     mov rax, qword[rbp+rcx*8]
+     mov [rbp+rbx*8], rax
+     dec rbx
+     dec rcx
+     cmp rcx, 0
+     jne start_copy_stack"^index^"
+     end_copy_stack"^index^":
+     mov rax, qword[rbp+rcx*8]
+     mov [rbp+rbx*8], rax
+     pop_loop"^index^": ; cleaning the stack
+     cmp rdx, 0
+     je end_pop_loop"^index^"
+     add rsp, 8
+     dec rdx
+     jmp pop_loop"^index^"
+     end_pop_loop"^index^":
+     mov rbp, rsp
+     mov qword[rbp+24], "^string_of_int(num_of_args+1)^" ; update the number of arguments in the stack
      finish_fix_stack"^index^":\n" in
      let label_lcode = "Lcode"^index^":\n" in
      let lcode_body = label_lcode^fix_stack^
-     (main_generate const_tbl fvars (depth+1) body)^"\n
-     leave\n
-     ret\n
+     (main_generate const_tbl fvars (depth+1) body)^"
+     leave
+     ret
      Lcont"^index^":\n" in
      ext_env^
-    "MAKE_CLOSURE(rax,rbx, Lcode"^index^")\n
+    "MAKE_CLOSURE(rax,rbx, Lcode"^index^")
      jmp Lcont"^index^"\n"^
      lcode_body;;
 

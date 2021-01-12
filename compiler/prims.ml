@@ -56,6 +56,8 @@ module Prims : PRIMS = struct
      The argument register assignment follows the x86 64bit Unix ABI, because there needs to be *some*
      kind of consistency, so why not just use the standard ABI.
      See page 22 in https://raw.githubusercontent.com/wiki/hjl-tools/x86-psABI/x86-64-psABI-1.0.pdf
+
+     *** FIXME: There's a typo here: PVAR(0) should be rdi, PVAR(1) should be rsi, according to the ABI     
    *)
   let make_unary label body = make_routine label ("mov rsi, PVAR(0)\n\t" ^ body);;
   let make_binary label body = make_unary label ("mov rdi, PVAR(1)\n\t" ^ body);;
@@ -83,6 +85,30 @@ module Prims : PRIMS = struct
       make_unary (name ^ "?")
         (return_boolean_eq ("mov sil, byte [rsi]\n\tcmp sil, " ^ type_tag)) in
     String.concat "\n\n" (List.map (fun (a, b) -> single_query a b) queries_to_types);;
+
+  (* The rational number artihmetic operators have to normalize the fractions they return,
+     so a GCD implementation is needed. Now there are two options: 
+     1) implement only a scheme-procedure-like GCD, and allocate rational number scheme objects for the 
+        intermediate numerator and denominator values of the fraction to be returned, call GCD, decompose
+        the returned fraction, perform the divisions, and allocate the final fraction to return
+     2) implement 2 GCDs: a low-level gcd that only implements the basic GCD loop, which is used by the rational 
+        number arithmetic operations; and a scheme-procedure-like GCD to be wrapped by the stdlib GCD implementation.
+    
+     The second option is more efficient, and doesn't cost much, in terms of executable file bloat: there are only 4
+     routines that inline the primitive gcd_loop: add, mul, div, and gcd.
+     Note that div the inline_gcd embedded in div is dead code (the instructions are never executed), so a more optimized
+     version of prims.ml could cut the duplication down to only 3 places (add, mul, gcd).
+   *)
+  let inline_gcd =
+    ".gcd_loop:
+     and rdi, rdi
+     jz .end_gcd_loop
+     cqo
+     idiv rdi
+     mov rax, rdi
+     mov rdi, rdx
+     jmp .gcd_loop	
+     .end_gcd_loop:";;
 
   (* The arithmetic operation implementation is multi-tiered:
      - The low-level implementations of all operations are binary, e.g. (+ 1 2 3) and (+ 1) are not 
@@ -128,7 +154,8 @@ module Prims : PRIMS = struct
        and not 64 bits.
      - `lt.flt` does not handle NaN, +inf and -inf correctly. This allows us to use `return_boolean jl` for both the
        floating-point and the fraction cases. For a fully correct implementation, `lt.flt` should make use of
-       the `ucomisd` opcode and `return_boolean jb` instead (see https://www.felixcloutier.com/x86/ucomisd for more information).
+       the `ucomisd` opcode and `return_boolean jb` instead (see https://www.felixcloutier.com/x86/ucomisd for
+       more information).
    *)
   let numeric_ops =
     let numeric_op name flt_body rat_body body_wrapper =      
@@ -170,6 +197,23 @@ module Prims : PRIMS = struct
 	  NUMERATOR rsi, rsi
 	  NUMERATOR rdi, rdi
           " ^ rat_op ^ "
+	  mov rax, rcx
+	  mov rdi, rsi
+          " ^ inline_gcd ^ "
+	  mov rdi, rax
+	  mov rax, rsi
+	  cqo
+	  idiv rdi
+	  mov rsi, rax
+	  mov rax, rcx
+	  cqo
+	  idiv rdi
+	  mov rcx, rax
+          cmp rcx, 0
+          jge .make_rat
+          imul rsi, -1
+          imul rcx, -1
+          .make_rat:
           MAKE_RATIONAL(rax, rsi, rcx)") in
     let comp_map = [
         (* = *)
@@ -200,8 +244,8 @@ module Prims : PRIMS = struct
 	 FLOAT_VAL rdi, rdi
 	 movq xmm1, rdi
 	 cmpltpd xmm0, xmm1
-	 movq rsi, xmm0
-	 cmp rsi, 0", "lt";
+         movq rsi, xmm0
+         cmp rsi, 0", "lt";
       ] in
     let comparator comp_wrapper name flt_body rat_body = numeric_op name flt_body rat_body comp_wrapper in
     (String.concat "\n\n" (List.map (fun (a, b, c) -> arith c b a (fun x -> x)) arith_map)) ^
@@ -296,149 +340,141 @@ module Prims : PRIMS = struct
         "xor rdx, rdx
 	 NUMERATOR rax, rsi
          NUMERATOR rdi, rdi
-       .loop:
-	 and rdi, rdi
-	 jz .end_loop
-	 xor rdx, rdx 
-	 div rdi
-	 mov rax, rdi
-	 mov rdi, rdx
-	 jmp .loop	
-       .end_loop:
+         " ^ inline_gcd ^ "
 	 mov rdx, rax
          MAKE_RATIONAL(rax, rdx, 1)", make_binary, "gcd";  
       ] in
     String.concat "\n\n" (List.map (fun (a, b, c) -> (b c a)) misc_parts);;
+    
+ (* adding here the functions *)
 
-   (* adding here the functions - Shimi*)
+ let car =
+  "car:
+   push rbp
+   mov rbp, rsp 
+   mov rsi, PVAR(0) ; get the pair object
+   CAR rax, rsi     ; get the first in the pair
+   pop rbp
+   ret";;
 
-   let car =
-    "car:
-     push rbp
-     mov rbp, rsp 
-     mov rsi, PVAR(0)
-     CAR rax, rsi
-     pop rbp
-     ret";;
+let cdr =
+ "cdr:
+  push rbp
+  mov rbp, rsp 
+  mov rsi, PVAR(0) ; get the pair object
+  CDR rax, rsi     ; get the first in the pair
+  pop rbp
+  ret";;
 
-  let cdr =
-   "cdr:
-    push rbp
-    mov rbp, rsp 
-    mov rsi, PVAR(0)
-    CDR rax, rsi
-    pop rbp
-    ret";;
+let set_car =
+ "set_car:
+  push rbp
+  mov rbp, rsp 
+  mov rsi, PVAR(0) ; get the pair object
+  mov rdi, PVAR(1) ; get the object to be set as car
+  mov[rsi+TYPE_SIZE], rdi ; set car as rdi
+  pop rbp
+  ret";;
 
-  let set_car =
-   "set_car:
-    push rbp
-    mov rbp, rsp 
-    mov rsi, PVAR(0)
-    mov rdi, PVAR(1)
-    mov[rsi+TYPE_SIZE], rdi
-    pop rbp
-    ret";;
+let set_cdr =
+ "set_cdr:
+  push rbp
+  mov rbp, rsp 
+  mov rsi, PVAR(0) ; get the pair object
+  mov rdi, PVAR(1) ; get the object to be set as cdr
+  mov[rsi+TYPE_SIZE+WORD_SIZE], rdi ; set cdr as rdi
+  pop rbp
+  ret";;
 
-  let set_cdr =
-   "set_cdr:
-    push rbp
-    mov rbp, rsp 
-    mov rsi, PVAR(0)
-    mov rdi, PVAR(1)
-    mov[rsi+TYPE_SIZE+WORD_SIZE], rdi
-    pop rbp
-    ret";;
-
-  let cons =
-   "cons:
-    push rbp
-    mov rbp, rsp 
-    mov rsi, PVAR(0)
-    mov rdi, PVAR(1)
-    MAKE_PAIR(rax, rsi, rdi)
-    pop rbp
-    ret";;
-   
-  let apply =
-  "apply:
-    push rbp
-    mov rbp, rsp
-    mov rcx, [rbp + 24]               ; argument count
-    shl rcx, 3                        ; times 8
-    add rcx, rbp      
-    add rcx, 24      
-    mov rsi, [rcx]                    ; rsi now points to the list      
-    xor rcx, rcx                      ; Clear rcx for counting
-    push SOB_NIL_ADDRESS              ; Push magic
-    .push_args_loop:
-      CAR rax, rsi  
-      push rax                        ; push list argument
-      inc rcx                         ; increase the counter
-      CDR rsi, rsi   
-      cmp rsi, SOB_NIL_ADDRESS
-      jne .push_args_loop
-    mov rax, rsp
+let cons =
+ "cons:
+  push rbp
+  mov rbp, rsp 
+  mov rsi, PVAR(0) ; get the first object
+  mov rdi, PVAR(1) ; get the second object
+  MAKE_PAIR(rax, rsi, rdi) ; combine them to be a pair object
+  pop rbp
+  ret";;
+ 
+let apply =
+"apply:
+  push rbp
+  mov rbp, rsp
+  mov rcx, [rbp + 24]               ; argument count
+  shl rcx, 3                        ; times 8
+  add rcx, rbp      
+  add rcx, 24      
+  mov rsi, [rcx]                    ; rsi now points to the list      
+  xor rcx, rcx                      ; Clear rcx for counting
+  push SOB_NIL_ADDRESS              ; Push magic
+  .push_args_loop:
+    CAR rax, rsi  
+    push rax                        ; push list argument
+    inc rcx                         ; increase the counter
+    CDR rsi, rsi   
+    cmp rsi, SOB_NIL_ADDRESS
+    jne .push_args_loop
+  mov rax, rsp
+  mov rbx, rbp
+  sub rbx, 16                     ; rbx now points at the first arg of the list
+  cmp rax, rbx
+  je .check_for_extra_args
+  mov rsi, [rbx]                  ; arg at the top
+  mov rdx, [rax]                  ; switch cells  
+  mov [rbx], rdx
+  mov [rax], rsi
+  add rax, 8
+  sub rbx, 8
+  .check_for_extra_args:
+    mov rax, [rbp + 24]             ; argument count
+    sub rax, 2                      ; ignore list and proc
+    jz .finish_apply
     mov rbx, rbp
-    sub rbx, 16                     ; rbx now points at the first arg of the list
-    cmp rax, rbx
-    je .check_for_extra_args
+    add rbx, 40
+  .push_extra_args:
+    push qword [rbx]    
+    add rbx, 8
+    dec rax
+    jnz .push_extra_args
+  .switch_extra_args:
+    mov rax, rsp
+    mov rbx, rcx                    ; length of the list
+    shl rbx, 3                      ; times 8
+    sub rbx, rbp                    ; rbx <- (length * 8) -rbp
+    neg rbx                         ; rbx <- rbp - (length * 8)
+    sub rbx, 16                     ; rbx now points at the first arg of the extra args
+    cmp rax, rbx                    
+    je .finish_apply
     mov rsi, [rbx]                  ; arg at the top
     mov rdx, [rax]                  ; switch cells  
     mov [rbx], rdx
     mov [rax], rsi
     add rax, 8
     sub rbx, 8
-    .check_for_extra_args:
-      mov rax, [rbp + 24]             ; argument count
-      sub rax, 2                      ; ignore list and proc
-      jz .finish_apply
-      mov rbx, rbp
-      add rbx, 40
-    .push_extra_args:
-      push qword [rbx]    
-      add rbx, 8
-      dec rax
-      jnz .push_extra_args
-    .switch_extra_args:
-      mov rax, rsp
-      mov rbx, rcx                    ; length of the list
-      shl rbx, 3                      ; times 8
-      sub rbx, rbp                    ; rbx <- (length * 8) -rbp
-      neg rbx                         ; rbx <- rbp - (length * 8)
-      sub rbx, 16                     ; rbx now points at the first arg of the extra args
-      cmp rax, rbx                    
-      je .finish_apply
-      mov rsi, [rbx]                  ; arg at the top
-      mov rdx, [rax]                  ; switch cells  
-      mov [rbx], rdx
-      mov [rax], rsi
-      add rax, 8
-      sub rbx, 8
-    .finish_apply:
-      mov rax, [rbp + 24]
-      sub rax, 2                      ; ignore list and proc
-      add rax, rcx
-      push rax
-      mov rax, PVAR(0)        ; Closure
-      CLOSURE_ENV rbx, rax
-      push rbx
-      CLOSURE_CODE rax, rax
-      call rax
-      mov rdx, [rsp + 8]
-      add rdx, 3
-    .cleanloop:
-      cmp rdx, 0
-      je .end_cleanloop;
-      add rsp, 8
-      dec rdx
-      jmp .cleanloop
-    .end_cleanloop:
-      pop rbp
-      ret";;
+  .finish_apply:
+    mov rax, [rbp + 24]
+    sub rax, 2                      ; ignore list and proc
+    add rax, rcx
+    push rax
+    mov rax, PVAR(0)        ; Closure
+    CLOSURE_ENV rbx, rax
+    push rbx
+    CLOSURE_CODE rax, rax
+    call rax
+    mov rdx, [rsp + 8]
+    add rdx, 3
+  .cleanloop:
+    cmp rdx, 0
+    je .end_cleanloop;
+    add rsp, 8
+    dec rdx
+    jmp .cleanloop
+  .end_cleanloop:
+    pop rbp
+    ret";;
 
 (* This is the interface of the module. It constructs a large x86 64-bit string using the routines
-   defined above. The main compiler pipline code (in compiler.ml) calls into this module to get the
-   string of primitive procedures. *)
+ defined above. The main compiler pipline code (in compiler.ml) calls into this module to get the
+ string of primitive procedures. *)
 let procs = String.concat "\n\n" [type_queries ; numeric_ops; misc_ops; car; cdr; set_car; set_cdr; cons; apply];;
 end;;
