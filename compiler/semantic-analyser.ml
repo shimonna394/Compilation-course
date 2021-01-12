@@ -111,10 +111,10 @@ module Semantics : SEMANTICS = struct
      | If'(test,then_expr,else_expr) -> If'((demonstrate_tail_calls false test),
        (demonstrate_tail_calls in_tail_p then_expr),
        (demonstrate_tail_calls in_tail_p else_expr))
-     | Seq'(expr_list) -> Seq'(last_in_tail expr_list)
+     | Seq'(expr_list) -> Seq'(last_in_tail in_tail_p expr_list)
      | Def'(var,exp) -> Def'(var, (demonstrate_tail_calls false exp)) 
      | Set'(var,exp) -> Set'(var, (demonstrate_tail_calls false exp)) 
-     | Or'(expr_list) -> Or'(last_in_tail expr_list)
+     | Or'(expr_list) -> Or'(last_in_tail in_tail_p expr_list)
      | LambdaSimple'(args,body) -> LambdaSimple'(args,(demonstrate_tail_calls true body))
      | LambdaOpt'(args,opt,body) -> LambdaOpt'(args,opt,(demonstrate_tail_calls true body))
      | Applic'(proc,args) -> (match in_tail_p with
@@ -122,11 +122,14 @@ module Semantics : SEMANTICS = struct
        | false -> Applic'((demonstrate_tail_calls false proc), (List.map (demonstrate_tail_calls false) args)))
      | ApplicTP'(proc,args) -> ApplicTP'((demonstrate_tail_calls false proc), (List.map (demonstrate_tail_calls false) args));
      
-    and last_in_tail expr_list = 
+    and last_in_tail in_tail_p expr_list =
+    (if ((List.length expr_list) = 1)
+    then [demonstrate_tail_calls in_tail_p (List.hd expr_list)] 
+    else 
       let reverse_list = (List.rev expr_list) in
       let last_expr = (List.hd reverse_list) in
       let rest_expr_list = (List.rev (List.tl reverse_list)) in
-      (List.append (List.map (demonstrate_tail_calls false) rest_expr_list) [demonstrate_tail_calls true last_expr]);;
+      (List.append (List.map (demonstrate_tail_calls false) rest_expr_list) [demonstrate_tail_calls in_tail_p last_expr]));;
   
       (* box var to BoxGet and set to SetBox *)
     let rec add_boxing_param param body = 
